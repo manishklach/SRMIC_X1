@@ -4,6 +4,7 @@ __pycache__/
 .ipynb_checkpoints/
 .DS_Store
 SRMIC_X1_India_Provisional_Patent_Draft.md
+SRMIC_X1_India_Provisional_Patent_Draft.pdf
 SRMIC_X1_v1_1_Hardened_Addendum.md
 patent_assets/
 # Keep results and summaries, but maybe ignore some large files if they exist.
