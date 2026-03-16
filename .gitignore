@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.ipynb_checkpoints/
+.DS_Store
+# Keep results and summaries, but maybe ignore some large files if they exist.
+# For now, let's just ignore common python artifacts.
