@@ -46,26 +46,27 @@ sim-multichiplet: $(BUILD_DIR)
 # --- Linting ---
 lint:
 	@echo "--- [LINT] Running Verilator Lint ---"
-	./scripts/lint.sh
+	bash ./scripts/lint.sh
 
-# --- Synthesis Sanity ---
+# --- Synthesis ---
 synth: $(BUILD_DIR)
 	@echo "--- [YOSYS] Running Synthesis Sanity Check ---"
-	$(YOSYS) scripts/run_yosys.ys
+	cd $(BUILD_DIR) && yosys ../scripts/run_yosys.ys
 
 # --- Formal Verification ---
 formal: $(BUILD_DIR)
 	@echo "--- [SBY] Running Formal Verification ---"
 	mkdir -p $(BUILD_DIR)/formal
-	cd $(BUILD_DIR)/formal && $(SBY) -f ../../formal/ric.sby
-	cd $(BUILD_DIR)/formal && $(SBY) -f ../../formal/hrm_region.sby
-	cd $(BUILD_DIR)/formal && $(SBY) -f ../../formal/srmesh_router.sby
+	cd $(BUILD_DIR)/formal && sby -f ../../formal/ric.sby
+	cd $(BUILD_DIR)/formal && sby -f ../../formal/hrm_region.sby
+	cd $(BUILD_DIR)/formal && sby -f ../../formal/srmesh_router.sby
 	@echo "Formal Verification: PASS"
 
 # --- Performance Sweep ---
 perf-sweep: $(BUILD_DIR)
 	@echo "--- [SWEEP] Running Performance Parameter Sweep ---"
 	python3 scripts/perf_sweep.py
+
 
 # --- FPGA Synthesis Scaffold ---
 fpga-synth: $(BUILD_DIR)
