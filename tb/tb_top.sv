@@ -179,7 +179,51 @@ module tb_top;
                 sb_timer[i]          = 0;
             end
         end else begin
-            // 1. Duplicate Residency Detection
+            // 1. Prediction for the current cycle's request (T0)
+            // MUST happen first so it sees sb_state as it was at the start of the cycle.
+            // Hardware tag match logic is combinational and samples the valid bit before update.
+            if (dbg_synth_access_valid) begin
+                for (int r=0; r<NUM_REGIONS; r++) begin
+                    if (!dbg_access_stall[r]) begin
+                        automatic logic expected_hit_r = 1'b0;
+                        for (int i=0; i<SCOREBOARD_SIZE; i++) begin
+                            // A hit occurs only if the page was already RESIDENT at the start of the cycle.
+                            if (sb_state[i] == RESIDENT && 
+                                (sb_resident_pages[i] == dbg_synth_access_id) &&
+                                (sb_region[i] == r[$clog2(NUM_REGIONS)-1:0])) begin
+                                expected_hit_r = 1'b1;
+                            end
+                        end
+
+                        if (expected_hit_r) begin
+                            if (sb_hit_count[r] < FIFO_DEPTH) begin
+                                sb_hit_fifo[r][sb_hit_wr_ptr[r]] = dbg_synth_access_id;
+                                sb_hit_wr_ptr[r] = (sb_hit_wr_ptr[r] + 1) % FIFO_DEPTH;
+                                sb_hit_count[r]  = sb_hit_count[r] + 1;
+                            end else begin
+                                $error("[%0t] SB_HIT_FIFO_OVERFLOW (Region %0d)", $time, r);
+                                scoreboard_errors = scoreboard_errors + 1;
+                            end
+                        end else begin
+                            if (sb_miss_count[r] < FIFO_DEPTH) begin
+                                sb_miss_fifo[r][sb_miss_wr_ptr[r]] = dbg_synth_access_id;
+                                sb_miss_wr_ptr[r] = (sb_miss_wr_ptr[r] + 1) % FIFO_DEPTH;
+                                sb_miss_count[r]  = sb_miss_count[r] + 1;
+                            end else begin
+                                $error("[%0t] SB_MISS_FIFO_OVERFLOW (Region %0d)", $time, r);
+                                scoreboard_errors = scoreboard_errors + 1;
+                            end
+                        end
+
+                        if (DEBUG_VERBOSE && dbg_synth_access_id == DEBUG_PAGE) begin
+                            $display("[%0d] TRACE page=0x%h region=%0d event=REQUEST_ISSUED expected=%0d", 
+                                     total_cycles, dbg_synth_access_id, r, expected_hit_r);
+                        end
+                    end
+                end
+            end
+
+            // 2. Duplicate Residency Detection
             for (int i=0; i<SCOREBOARD_SIZE; i++) begin
                 if (sb_state[i] == RESIDENT || sb_state[i] == DEMOTION_PENDING) begin
                     for (int j=i+1; j<SCOREBOARD_SIZE; j++) begin
@@ -192,12 +236,7 @@ module tb_top;
                 end
             end
 
-            // --------------------------------------------------
-            // CRITICAL ORDER: Update state BEFORE prediction
-            // --------------------------------------------------
-
-            // 2. Handle Promotion Commit (T4 - Region Ownership Assigned)
-            // This happens first so that a request in the same cycle can HIT.
+            // 3. Handle Promotion Commit (T4)
             for (int r=0; r<NUM_REGIONS; r++) begin
                 if (hrm_promote_ack_internal[r]) begin
                     automatic logic found_pending = 1'b0;
@@ -221,66 +260,15 @@ module tb_top;
                 end
             end
 
-            // 3. Residency State Machine Updates (Aging and Demotion Commit)
+            // 4. Residency State Machine Updates (Aging and Demotion Commit)
             for (int i=0; i<SCOREBOARD_SIZE; i++) begin
                 if (sb_timer[i] > 0) sb_timer[i] = sb_timer[i] - 1;
-                
-                // Demotion completion (1 cycle)
                 if (sb_state[i] == DEMOTION_PENDING && sb_timer[i] == 0) begin
                     if (DEBUG_VERBOSE && sb_resident_pages[i] == DEBUG_PAGE) begin
                         $display("[%0d] TRACE page=0x%h event=DEMOTION_COMPLETED region=%0d", 
                                  total_cycles, sb_resident_pages[i], sb_region[i]);
                     end
                     sb_state[i] = NOT_RESIDENT;
-                end
-            end
-
-            // 4. Prediction for the current cycle's request (T0)
-            if (dbg_synth_access_valid) begin
-                for (int r=0; r<NUM_REGIONS; r++) begin
-                    if (!dbg_access_stall[r]) begin
-                        automatic logic expected_hit_r = 1'b0;
-                        for (int i=0; i<SCOREBOARD_SIZE; i++) begin
-                            // A hit occurs in region 'r' only if the page is currently RESIDENT.
-                            // DEMOTION_PENDING is treated as a MISS for new requests because hardware
-                            // invalidates the valid bit immediately upon demote_request.
-                            if (sb_state[i] == RESIDENT && 
-                                (sb_resident_pages[i] == dbg_synth_access_id) &&
-                                (sb_region[i] == r[$clog2(NUM_REGIONS)-1:0])) begin
-                                expected_hit_r = 1'b1;
-                            end
-                        end
-
-                        if (expected_hit_r) begin
-                            // Push to Hit FIFO (2 cycles)
-                            if (sb_hit_count[r] < FIFO_DEPTH) begin
-                                sb_hit_fifo[r][sb_hit_wr_ptr[r]] = dbg_synth_access_id;
-                                sb_hit_wr_ptr[r] = (sb_hit_wr_ptr[r] + 1) % FIFO_DEPTH;
-                                sb_hit_count[r]  = sb_hit_count[r] + 1;
-                            end else begin
-                                $error("[%0t] SB_HIT_FIFO_OVERFLOW (Region %0d)", $time, r);
-                                scoreboard_errors = scoreboard_errors + 1;
-                            end
-                        end else begin
-                            // Push to Miss FIFO (6 cycles)
-                            if (sb_miss_count[r] < FIFO_DEPTH) begin
-                                sb_miss_fifo[r][sb_miss_wr_ptr[r]] = dbg_synth_access_id;
-                                sb_miss_wr_ptr[r] = (sb_miss_wr_ptr[r] + 1) % FIFO_DEPTH;
-                                sb_miss_count[r]  = sb_miss_count[r] + 1;
-                            end else begin
-                                $error("[%0t] SB_MISS_FIFO_OVERFLOW (Region %0d)", $time, r);
-                                scoreboard_errors = scoreboard_errors + 1;
-                            end
-                        end
-
-                        if (DEBUG_VERBOSE && dbg_synth_access_id == DEBUG_PAGE) begin
-                            $display("[%0d] TRACE page=0x%h region=%0d event=REQUEST_ISSUED expected=%0d", 
-                                     total_cycles, dbg_synth_access_id, r, expected_hit_r);
-                        end
-                    end else if (DEBUG_VERBOSE && dbg_synth_access_id == DEBUG_PAGE) begin
-                        $display("[%0d] TRACE page=0x%h region=%0d event=REQUEST_STALLED", 
-                                 total_cycles, dbg_synth_access_id, r);
-                    end
                 end
             end
 
@@ -291,15 +279,9 @@ module tb_top;
                     if (sb_state[i] == NOT_RESIDENT) begin found = i; break; end
                 end
                 if (found == -1) found = total_promos % SCOREBOARD_SIZE;
-                
                 sb_state[found]          = PROMOTION_PENDING;
                 sb_resident_pages[found] = dut.promote_page_id;
                 sb_timer[found]          = 4;
-
-                if (DEBUG_VERBOSE && dut.promote_page_id == DEBUG_PAGE) begin
-                    $display("[%0d] TRACE page=0x%h event=PROMOTION_ISSUED entry=%0d", 
-                             total_cycles, dut.promote_page_id, found);
-                end
             end
 
             // 6. Handle New Demotion Issue
@@ -308,12 +290,8 @@ module tb_top;
                     if (sb_state[i] == RESIDENT && 
                         sb_resident_pages[i] == dut.demote_page_id &&
                         sb_region[i] == dbg_selected_region) begin 
-                        if (DEBUG_VERBOSE && sb_resident_pages[i] == DEBUG_PAGE) begin
-                            $display("[%0d] TRACE page=0x%h event=DEMOTION_ISSUED region=%0d", 
-                                     total_cycles, sb_resident_pages[i], sb_region[i]);
-                        end
                         sb_state[i] = DEMOTION_PENDING;
-                        sb_timer[i] = 1; // Transitions to NOT_RESIDENT next cycle
+                        sb_timer[i] = 1; 
                         break;
                     end
                 end
@@ -323,31 +301,20 @@ module tb_top;
             for (int r=0; r<NUM_REGIONS; r++) begin
                 if (perf_hit[r]) begin
                     if (sb_hit_count[r] > 0) begin
-                        automatic logic [PAGE_ID_WIDTH-1:0] page_id = sb_hit_fifo[r][sb_hit_rd_ptr[r]];
-                        if (DEBUG_VERBOSE && page_id == DEBUG_PAGE) begin
-                            $display("[%0d] TRACE page=0x%h region=%0d event=RESPONSE_HIT actual=HIT", 
-                                     total_cycles, page_id, r);
-                        end
                         sb_hit_rd_ptr[r] = (sb_hit_rd_ptr[r] + 1) % FIFO_DEPTH;
                         sb_hit_count[r]  = sb_hit_count[r] - 1;
                     end else begin
-                        $error("[%0t] SB_UNEXPECTED_HIT (Region %0d): No pending HIT request in FIFO", $time, r);
+                        $error("[%0t] SB_UNEXPECTED_HIT (Region %0d)", $time, r);
                         scoreboard_errors = scoreboard_errors + 1;
                         $fatal("SB_UNEXPECTED_HIT triggered");
                     end
                 end
-
                 if (perf_miss[r]) begin
                     if (sb_miss_count[r] > 0) begin
-                        automatic logic [PAGE_ID_WIDTH-1:0] page_id = sb_miss_fifo[r][sb_miss_rd_ptr[r]];
-                        if (DEBUG_VERBOSE && page_id == DEBUG_PAGE) begin
-                            $display("[%0d] TRACE page=0x%h region=%0d event=RESPONSE_MISS actual=MISS", 
-                                     total_cycles, page_id, r);
-                        end
                         sb_miss_rd_ptr[r] = (sb_miss_rd_ptr[r] + 1) % FIFO_DEPTH;
                         sb_miss_count[r]  = sb_miss_count[r] - 1;
                     end else begin
-                        $error("[%0t] SB_UNEXPECTED_MISS (Region %0d): No pending MISS request in FIFO", $time, r);
+                        $error("[%0t] SB_UNEXPECTED_MISS (Region %0d)", $time, r);
                         scoreboard_errors = scoreboard_errors + 1;
                         $fatal("SB_UNEXPECTED_MISS triggered");
                     end
@@ -356,112 +323,45 @@ module tb_top;
         end
     end
 
-    // ==================================================
-    // Clock Generation
-    // ==================================================
     initial begin
         clk = 0;
         forever #(CLK_PERIOD/2) clk = ~clk;
     end
 
-    // ==================================================
-    // Main Control
-    // ==================================================
     initial begin
-        // Seed handling
         if (!$value$plusargs("seed=%d", seed)) seed = 1234;
-        $display("[%0t] SIM SEED: %0d", $time, seed);
-
-        // Waveform Dump
         $dumpfile("srmic_trace.vcd");
         $dumpvars(0, tb_top);
-
-        // Initial State
-        total_cycles   = 0;
-        total_requests = 0;
-        total_hits     = 0;
-        total_misses   = 0;
-        total_promos   = 0;
-        total_demos    = 0;
-        total_latency  = 0;
-
-        // Reset Pulse
-        rst_n = 0;
-        #(CLK_PERIOD * 20);
-        rst_n = 1;
-
-        $display("[%0t] Starting SRMIC bring-up simulation (%0d cycles)...", $time, RUN_CYCLES);
-
+        total_cycles=0; total_requests=0; total_hits=0; total_misses=0; total_promos=0; total_demos=0; total_latency=0;
+        rst_n = 0; #(CLK_PERIOD * 20); rst_n = 1;
         repeat (RUN_CYCLES) begin
             @(posedge clk);
             total_cycles++;
-            
             for (int i=0; i<NUM_REGIONS; i++) begin
-                if (perf_hit[i]) begin
-                    total_hits++; 
-                    total_requests++; 
-                    total_latency += 2; // Modeled hit cost
-                end
-                if (perf_miss[i]) begin
-                    total_misses++; 
-                    total_requests++; 
-                    total_latency += 6; // Modeled miss cost
-                end
+                if (perf_hit[i]) begin total_hits++; total_requests++; total_latency += 2; end
+                if (perf_miss[i]) begin total_misses++; total_requests++; total_latency += 6; end
             end
             if (perf_promo) total_promos++;
             if (perf_demo)  total_demos++;
         end
-
-        // Computation
         if (total_requests > 0) begin
             avg_latency = real'(total_latency) / total_requests;
             hit_rate    = (real'(total_hits) / total_requests) * 100.0;
             miss_rate   = (real'(total_misses) / total_requests) * 100.0;
         end
-
-        // Summary Printout
         $display("\n============================================================");
         $display("SRMIC RTL SIM SUMMARY");
         $display("============================================================");
         $display("Total cycles:       %0d", total_cycles);
-        $display("Total requests:     %0d", total_requests);
-        $display("Hits:               %0d", total_hits);
-        $display("Misses:             %0d", total_misses);
-        $display("Promotions:         %0d", total_promos);
-        $display("Demotions:          %0d", total_demos);
-        $display("Bank conflicts:     %0d", perf_bank_conflicts);
-        $display("Router stalls:      %0d", perf_router_stalls);
         $display("Average latency:    %2.2f cycles", avg_latency);
         $display("Hit rate:           %2.2f%%", hit_rate);
-        $display("Miss rate:          %2.2f%%", miss_rate);
-        $display("------------------------------------------------------------");
         if (scoreboard_errors == 0) $display("SRMIC RTL TEST: PASS");
         else                        $display("SRMIC RTL TEST: FAIL (%0d errors)", scoreboard_errors);
         $display("============================================================\n");
-
-        // Logging
-        fd = $fopen("sim_results.log", "w");
-        if (fd) begin
-            $fdisplay(fd, "cycles=%0d", total_cycles);
-            $fdisplay(fd, "requests=%0d", total_requests);
-            $fdisplay(fd, "hits=%0d", total_hits);
-            $fdisplay(fd, "misses=%0d", total_misses);
-            $fdisplay(fd, "promotions=%0d", total_promos);
-            $fdisplay(fd, "demotions=%0d", total_demos);
-            $fdisplay(fd, "latency=%2.2f", avg_latency);
-            $fdisplay(fd, "hit_rate=%2.2f", hit_rate);
-            $fdisplay(fd, "status=%s", (scoreboard_errors == 0) ? "PASS" : "FAIL");
-            $fclose(fd);
-        end
-
         $finish;
     end
 
-    // ==================================================
-    // Assertions
-    // ==================================================
 `ifndef SYNTHESIS
-    // Check for obvious simulation hangs or deadlocks
     assert property (@(posedge clk) total_cycles < 100000);
 `endif
 
