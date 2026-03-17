@@ -199,14 +199,22 @@ module tb_top;
                                      total_cycles, sb_resident_pages[i], i, j);
 
             // ----------------------------------------------------------
-            // STEP 3: Promotion commit — use actual hrm promote_ack
+            // STEP 3: Promotion commit — match by region AND page_id
             // ----------------------------------------------------------
+            // FIX v3: Previous version matched only by region index.
+            // If two promotions target the same region back-to-back,
+            // first-match-by-region commits the WRONG scoreboard entry.
+            // Use promote_page_id_pipe[3] from the HRM region to get
+            // the exact page being written to tag_array this cycle.
             for (int r=0; r<NUM_REGIONS; r++) begin
                 if (hrm_promote_ack_internal[r]) begin
+                    automatic logic [PAGE_ID_WIDTH-1:0] committed_page =
+                        dut.gen_regions[r].i_hrm.promote_page_id_pipe[3];
                     automatic logic found_it = 1'b0;
                     for (int i=0; i<SCOREBOARD_SIZE; i++) begin
                         if (sb_state[i] == PROMOTION_PENDING &&
-                            sb_region[i] == r[$clog2(NUM_REGIONS)-1:0]) begin
+                            sb_region[i] == r[$clog2(NUM_REGIONS)-1:0] &&
+                            sb_resident_pages[i] == committed_page) begin
                             sb_state[i] = RESIDENT;
                             sb_timer[i] = 0;
                             found_it    = 1'b1;
@@ -217,7 +225,8 @@ module tb_top;
                         end
                     end
                     if (!found_it)
-                        $display("[%0d] SB_WARN: promote_ack r=%0d no pending (ok if evicted)", total_cycles, r);
+                        $display("[%0d] SB_WARN: promote_ack r=%0d page=0x%h no match",
+                                 total_cycles, r, committed_page);
                 end
             end
 
