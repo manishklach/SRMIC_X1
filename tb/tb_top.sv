@@ -192,14 +192,59 @@ module tb_top;
                 end
             end
 
-            // 2. Prediction at time of access issue (T0)
+            // --------------------------------------------------
+            // CRITICAL ORDER: Update state BEFORE prediction
+            // --------------------------------------------------
+
+            // 2. Handle Promotion Commit (T4 - Region Ownership Assigned)
+            // This happens first so that a request in the same cycle can HIT.
+            for (int r=0; r<NUM_REGIONS; r++) begin
+                if (hrm_promote_ack_internal[r]) begin
+                    automatic logic found_pending = 1'b0;
+                    for (int i=0; i<SCOREBOARD_SIZE; i++) begin
+                        if (sb_state[i] == PROMOTION_PENDING && sb_timer[i] <= 1) begin
+                            sb_state[i]  = RESIDENT;
+                            sb_region[i] = r[$clog2(NUM_REGIONS)-1:0];
+                            sb_timer[i]  = 0;
+                            found_pending = 1'b1;
+                            if (DEBUG_VERBOSE && sb_resident_pages[i] == DEBUG_PAGE) begin
+                                $display("[%0d] TRACE page=0x%h event=PROMOTION_COMMITTED region=%0d", 
+                                         total_cycles, sb_resident_pages[i], r);
+                            end
+                            break;
+                        end
+                    end
+                    if (!found_pending) begin
+                        $error("[%0t] SB_ERROR: Promotion ack for region %0d but no pending promo found", $time, r);
+                        scoreboard_errors = scoreboard_errors + 1;
+                    end
+                end
+            end
+
+            // 3. Residency State Machine Updates (Aging and Demotion Commit)
+            for (int i=0; i<SCOREBOARD_SIZE; i++) begin
+                if (sb_timer[i] > 0) sb_timer[i] = sb_timer[i] - 1;
+                
+                // Demotion completion (1 cycle)
+                if (sb_state[i] == DEMOTION_PENDING && sb_timer[i] == 0) begin
+                    if (DEBUG_VERBOSE && sb_resident_pages[i] == DEBUG_PAGE) begin
+                        $display("[%0d] TRACE page=0x%h event=DEMOTION_COMPLETED region=%0d", 
+                                 total_cycles, sb_resident_pages[i], sb_region[i]);
+                    end
+                    sb_state[i] = NOT_RESIDENT;
+                end
+            end
+
+            // 4. Prediction for the current cycle's request (T0)
             if (dbg_synth_access_valid) begin
                 for (int r=0; r<NUM_REGIONS; r++) begin
                     if (!dbg_access_stall[r]) begin
                         automatic logic expected_hit_r = 1'b0;
                         for (int i=0; i<SCOREBOARD_SIZE; i++) begin
-                            // Hits only occur if resident or in progress of demotion
-                            if ((sb_state[i] == RESIDENT || sb_state[i] == DEMOTION_PENDING) && 
+                            // A hit occurs in region 'r' only if the page is currently RESIDENT.
+                            // DEMOTION_PENDING is treated as a MISS for new requests because hardware
+                            // invalidates the valid bit immediately upon demote_request.
+                            if (sb_state[i] == RESIDENT && 
                                 (sb_resident_pages[i] == dbg_synth_access_id) &&
                                 (sb_region[i] == r[$clog2(NUM_REGIONS)-1:0])) begin
                                 expected_hit_r = 1'b1;
@@ -239,21 +284,7 @@ module tb_top;
                 end
             end
 
-            // 3. Residency State Machine Updates
-            for (int i=0; i<SCOREBOARD_SIZE; i++) begin
-                if (sb_timer[i] > 0) sb_timer[i] = sb_timer[i] - 1;
-                
-                if (sb_state[i] == DEMOTION_PENDING && sb_timer[i] == 1) begin
-                    if (DEBUG_VERBOSE && sb_resident_pages[i] == DEBUG_PAGE) begin
-                        $display("[%0d] TRACE page=0x%h event=DEMOTION_COMPLETED region=%0d", 
-                                 total_cycles, sb_resident_pages[i], sb_region[i]);
-                    end
-                    sb_state[i] = NOT_RESIDENT;
-                    sb_timer[i] = 0;
-                end
-            end
-
-            // 4. Handle Promotion Issue (T0)
+            // 5. Handle New Promotion Issue
             if (perf_promo) begin
                 automatic int found = -1;
                 for (int i=0; i<SCOREBOARD_SIZE; i++) begin
@@ -271,34 +302,10 @@ module tb_top;
                 end
             end
 
-            // 5. Handle Promotion Commit (T4)
-            for (int r=0; r<NUM_REGIONS; r++) begin
-                if (hrm_promote_ack_internal[r]) begin
-                    automatic logic found_pending = 1'b0;
-                    for (int i=0; i<SCOREBOARD_SIZE; i++) begin
-                        if (sb_state[i] == PROMOTION_PENDING && sb_timer[i] <= 1) begin
-                            sb_state[i]  = RESIDENT;
-                            sb_region[i] = r[$clog2(NUM_REGIONS)-1:0];
-                            sb_timer[i]  = 0;
-                            found_pending = 1'b1;
-                            if (DEBUG_VERBOSE && sb_resident_pages[i] == DEBUG_PAGE) begin
-                                $display("[%0d] TRACE page=0x%h event=PROMOTION_COMMITTED region=%0d", 
-                                         total_cycles, sb_resident_pages[i], r);
-                            end
-                            break;
-                        end
-                    end
-                    if (!found_pending) begin
-                        $error("[%0t] SB_ERROR: Promotion ack for region %0d but no pending promo found", $time, r);
-                        scoreboard_errors = scoreboard_errors + 1;
-                    end
-                end
-            end
-
-            // 6. Handle Demotions
+            // 6. Handle New Demotion Issue
             if (perf_demo) begin
                 for (int i=0; i<SCOREBOARD_SIZE; i++) begin
-                    if (sb_state[i] != NOT_RESIDENT && 
+                    if (sb_state[i] == RESIDENT && 
                         sb_resident_pages[i] == dut.demote_page_id &&
                         sb_region[i] == dbg_selected_region) begin 
                         if (DEBUG_VERBOSE && sb_resident_pages[i] == DEBUG_PAGE) begin
@@ -306,17 +313,14 @@ module tb_top;
                                      total_cycles, sb_resident_pages[i], sb_region[i]);
                         end
                         sb_state[i] = DEMOTION_PENDING;
-                        sb_timer[i] = 1;
+                        sb_timer[i] = 1; // Transitions to NOT_RESIDENT next cycle
                         break;
                     end
                 end
             end
             
-            // 7. Validate at Response Time (Per Region, handling overtaking)
+            // 7. Validate at Response Time
             for (int r=0; r<NUM_REGIONS; r++) begin
-                // A region can produce a Hit response and a Miss response in the same cycle.
-                // These correspond to different requests issued at different times.
-                
                 if (perf_hit[r]) begin
                     if (sb_hit_count[r] > 0) begin
                         automatic logic [PAGE_ID_WIDTH-1:0] page_id = sb_hit_fifo[r][sb_hit_rd_ptr[r]];
@@ -324,7 +328,6 @@ module tb_top;
                             $display("[%0d] TRACE page=0x%h region=%0d event=RESPONSE_HIT actual=HIT", 
                                      total_cycles, page_id, r);
                         end
-                        // Verification: RTL produced hit, SB expected hit. Page ID check is extra credit.
                         sb_hit_rd_ptr[r] = (sb_hit_rd_ptr[r] + 1) % FIFO_DEPTH;
                         sb_hit_count[r]  = sb_hit_count[r] - 1;
                     end else begin
@@ -341,7 +344,6 @@ module tb_top;
                             $display("[%0d] TRACE page=0x%h region=%0d event=RESPONSE_MISS actual=MISS", 
                                      total_cycles, page_id, r);
                         end
-                        // Verification: RTL produced miss, SB expected miss.
                         sb_miss_rd_ptr[r] = (sb_miss_rd_ptr[r] + 1) % FIFO_DEPTH;
                         sb_miss_count[r]  = sb_miss_count[r] - 1;
                     end else begin
