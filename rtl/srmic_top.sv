@@ -49,7 +49,11 @@ module srmic_top #(
     output logic [NUM_REGIONS-1:0]          dbg_last_hit,
     output logic [NUM_REGIONS-1:0]          dbg_last_miss,
     output logic [PAGE_ID_WIDTH-1:0]        dbg_last_promoted_page  [0:NUM_REGIONS-1],
-    output logic [PAGE_ID_WIDTH-1:0]        dbg_last_demoted_page   [0:NUM_REGIONS-1]
+    output logic [PAGE_ID_WIDTH-1:0]        dbg_last_demoted_page   [0:NUM_REGIONS-1],
+
+    // Traffic Gen Visibility
+    output logic                            dbg_synth_access_valid,
+    output logic [PAGE_ID_WIDTH-1:0]        dbg_synth_access_id
 );
 
     // ==================================================
@@ -86,6 +90,10 @@ module srmic_top #(
     logic [PAGE_ID_WIDTH-1:0]               synth_access_id;
     logic                                   synth_access_valid;
     logic [15:0]                            lfsr;
+
+    // Traffic Visibility assignments
+    assign dbg_synth_access_valid = synth_access_valid;
+    assign dbg_synth_access_id    = synth_access_id;
 
     // ==================================================
     // Combinational Logic

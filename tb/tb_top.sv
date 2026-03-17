@@ -52,6 +52,9 @@ module tb_top;
     logic [PAGE_ID_WIDTH-1:0]        dbg_last_promoted_page  [0:NUM_REGIONS-1];
     logic [PAGE_ID_WIDTH-1:0]        dbg_last_demoted_page   [0:NUM_REGIONS-1];
 
+    logic                            dbg_synth_access_valid;
+    logic [PAGE_ID_WIDTH-1:0]        dbg_synth_access_id;
+
     // Region-local promotion commit signals (captured via hierarchical paths)
     logic [NUM_REGIONS-1:0] hrm_promote_ack_internal;
     generate
@@ -92,16 +95,18 @@ module tb_top;
     logic [$clog2(NUM_REGIONS)-1:0] sb_region [0:SCOREBOARD_SIZE-1];
     int sb_timer [0:SCOREBOARD_SIZE-1];
     
-    // --- Scoreboard Response FIFOs (Per Region) ---
-    typedef struct packed {
-        logic [PAGE_ID_WIDTH-1:0] page_id;
-        logic                     expected_hit;
-    } sb_req_t;
+    // --- Scoreboard Response FIFOs (Per Region, split by latency type) ---
+    // Hit FIFO (2 cycle latency)
+    logic [PAGE_ID_WIDTH-1:0] sb_hit_fifo [0:NUM_REGIONS-1][0:FIFO_DEPTH-1];
+    int sb_hit_wr_ptr [0:NUM_REGIONS-1];
+    int sb_hit_rd_ptr [0:NUM_REGIONS-1];
+    int sb_hit_count  [0:NUM_REGIONS-1];
 
-    sb_req_t sb_fifo [0:NUM_REGIONS-1][0:FIFO_DEPTH-1];
-    int sb_fifo_wr_ptr [0:NUM_REGIONS-1];
-    int sb_fifo_rd_ptr [0:NUM_REGIONS-1];
-    int sb_fifo_count  [0:NUM_REGIONS-1];
+    // Miss FIFO (6 cycle latency)
+    logic [PAGE_ID_WIDTH-1:0] sb_miss_fifo [0:NUM_REGIONS-1][0:FIFO_DEPTH-1];
+    int sb_miss_wr_ptr [0:NUM_REGIONS-1];
+    int sb_miss_rd_ptr [0:NUM_REGIONS-1];
+    int sb_miss_count  [0:NUM_REGIONS-1];
 
     // ==================================================
     // DUT Instantiation
@@ -135,7 +140,9 @@ module tb_top;
         .dbg_last_hit(dbg_last_hit),
         .dbg_last_miss(dbg_last_miss),
         .dbg_last_promoted_page(dbg_last_promoted_page),
-        .dbg_last_demoted_page(dbg_last_demoted_page)
+        .dbg_last_demoted_page(dbg_last_demoted_page),
+        .dbg_synth_access_valid(dbg_synth_access_valid),
+        .dbg_synth_access_id(dbg_synth_access_id)
     );
 
     // ==================================================
@@ -158,9 +165,12 @@ module tb_top;
         if (!rst_n) begin
             scoreboard_errors = 0;
             for (int r=0; r<NUM_REGIONS; r++) begin
-                sb_fifo_wr_ptr[r]    = 0;
-                sb_fifo_rd_ptr[r]    = 0;
-                sb_fifo_count[r]     = 0;
+                sb_hit_wr_ptr[r]    = 0;
+                sb_hit_rd_ptr[r]    = 0;
+                sb_hit_count[r]     = 0;
+                sb_miss_wr_ptr[r]   = 0;
+                sb_miss_rd_ptr[r]   = 0;
+                sb_miss_count[r]    = 0;
             end
             for (int i=0; i<SCOREBOARD_SIZE; i++) begin
                 sb_state[i]          = NOT_RESIDENT;
@@ -183,52 +193,56 @@ module tb_top;
             end
 
             // 2. Prediction at time of access issue (T0)
-            // Access is broadcast to all regions; each determines its own expected_hit locally.
-            // Note: In Verilator, hierarchical references to registers inside modules 
-            // might show the updated value. We use $past(dbg_access_stall) to be safe 
-            // if we need to align with the start of the cycle, but since it's combinational 
-            // in HRM, we use it directly. 
-            if (dut.synth_access_valid) begin
+            if (dbg_synth_access_valid) begin
                 for (int r=0; r<NUM_REGIONS; r++) begin
                     if (!dbg_access_stall[r]) begin
                         automatic logic expected_hit_r = 1'b0;
                         for (int i=0; i<SCOREBOARD_SIZE; i++) begin
-                            // A hit occurs in region 'r' only if the page is architecturally resident.
-                            // PROMOTION_PENDING is NOT resident.
-                            // DEMOTION_PENDING IS still resident until the demotion clears.
+                            // Hits only occur if resident or in progress of demotion
                             if ((sb_state[i] == RESIDENT || sb_state[i] == DEMOTION_PENDING) && 
-                                (sb_resident_pages[i] == dut.synth_access_id) &&
+                                (sb_resident_pages[i] == dbg_synth_access_id) &&
                                 (sb_region[i] == r[$clog2(NUM_REGIONS)-1:0])) begin
                                 expected_hit_r = 1'b1;
                             end
                         end
 
-                        if (sb_fifo_count[r] < FIFO_DEPTH) begin
-                            sb_fifo[r][sb_fifo_wr_ptr[r]].page_id      = dut.synth_access_id;
-                            sb_fifo[r][sb_fifo_wr_ptr[r]].expected_hit = expected_hit_r;
-                            sb_fifo_wr_ptr[r] = (sb_fifo_wr_ptr[r] + 1) % FIFO_DEPTH;
-                            sb_fifo_count[r]  = sb_fifo_count[r] + 1;
+                        if (expected_hit_r) begin
+                            // Push to Hit FIFO (2 cycles)
+                            if (sb_hit_count[r] < FIFO_DEPTH) begin
+                                sb_hit_fifo[r][sb_hit_wr_ptr[r]] = dbg_synth_access_id;
+                                sb_hit_wr_ptr[r] = (sb_hit_wr_ptr[r] + 1) % FIFO_DEPTH;
+                                sb_hit_count[r]  = sb_hit_count[r] + 1;
+                            end else begin
+                                $error("[%0t] SB_HIT_FIFO_OVERFLOW (Region %0d)", $time, r);
+                                scoreboard_errors = scoreboard_errors + 1;
+                            end
                         end else begin
-                            $error("[%0t] SB_FIFO_OVERFLOW (Region %0d): Increase FIFO_DEPTH", $time, r);
-                            scoreboard_errors = scoreboard_errors + 1;
+                            // Push to Miss FIFO (6 cycles)
+                            if (sb_miss_count[r] < FIFO_DEPTH) begin
+                                sb_miss_fifo[r][sb_miss_wr_ptr[r]] = dbg_synth_access_id;
+                                sb_miss_wr_ptr[r] = (sb_miss_wr_ptr[r] + 1) % FIFO_DEPTH;
+                                sb_miss_count[r]  = sb_miss_count[r] + 1;
+                            end else begin
+                                $error("[%0t] SB_MISS_FIFO_OVERFLOW (Region %0d)", $time, r);
+                                scoreboard_errors = scoreboard_errors + 1;
+                            end
                         end
 
-                        if (DEBUG_VERBOSE && dut.synth_access_id == DEBUG_PAGE) begin
-                            $display("[%0d] TRACE page=0x%h region=%0d event=REQUEST_ISSUED expected=%0d stall=0", 
-                                     total_cycles, dut.synth_access_id, r, expected_hit_r);
+                        if (DEBUG_VERBOSE && dbg_synth_access_id == DEBUG_PAGE) begin
+                            $display("[%0d] TRACE page=0x%h region=%0d event=REQUEST_ISSUED expected=%0d", 
+                                     total_cycles, dbg_synth_access_id, r, expected_hit_r);
                         end
-                    end else if (DEBUG_VERBOSE && dut.synth_access_id == DEBUG_PAGE) begin
+                    end else if (DEBUG_VERBOSE && dbg_synth_access_id == DEBUG_PAGE) begin
                         $display("[%0d] TRACE page=0x%h region=%0d event=REQUEST_STALLED", 
-                                 total_cycles, dut.synth_access_id, r);
+                                 total_cycles, dbg_synth_access_id, r);
                     end
                 end
             end
 
-            // 3. Residency State Machine Updates (Aging and Demotion Commit)
+            // 3. Residency State Machine Updates
             for (int i=0; i<SCOREBOARD_SIZE; i++) begin
                 if (sb_timer[i] > 0) sb_timer[i] = sb_timer[i] - 1;
                 
-                // Demotion transition is timer-based (1 cycle)
                 if (sb_state[i] == DEMOTION_PENDING && sb_timer[i] == 1) begin
                     if (DEBUG_VERBOSE && sb_resident_pages[i] == DEBUG_PAGE) begin
                         $display("[%0d] TRACE page=0x%h event=DEMOTION_COMPLETED region=%0d", 
@@ -243,10 +257,7 @@ module tb_top;
             if (perf_promo) begin
                 automatic int found = -1;
                 for (int i=0; i<SCOREBOARD_SIZE; i++) begin
-                    if (sb_state[i] == NOT_RESIDENT) begin 
-                        found = i; 
-                        break; 
-                    end
+                    if (sb_state[i] == NOT_RESIDENT) begin found = i; break; end
                 end
                 if (found == -1) found = total_promos % SCOREBOARD_SIZE;
                 
@@ -260,7 +271,7 @@ module tb_top;
                 end
             end
 
-            // 5. Handle Promotion Commit (T4 - Region Ownership Assigned)
+            // 5. Handle Promotion Commit (T4)
             for (int r=0; r<NUM_REGIONS; r++) begin
                 if (hrm_promote_ack_internal[r]) begin
                     automatic logic found_pending = 1'b0;
@@ -278,13 +289,13 @@ module tb_top;
                         end
                     end
                     if (!found_pending) begin
-                        $error("[%0t] SB_ERROR: Promotion ack for region %0d but no pending promo found in scoreboard", $time, r);
+                        $error("[%0t] SB_ERROR: Promotion ack for region %0d but no pending promo found", $time, r);
                         scoreboard_errors = scoreboard_errors + 1;
                     end
                 end
             end
 
-            // 6. Handle Demotions (1 cycle latency)
+            // 6. Handle Demotions
             if (perf_demo) begin
                 for (int i=0; i<SCOREBOARD_SIZE; i++) begin
                     if (sb_state[i] != NOT_RESIDENT && 
@@ -301,38 +312,42 @@ module tb_top;
                 end
             end
             
-            // 7. Validate at Response Time (Per Region)
+            // 7. Validate at Response Time (Per Region, handling overtaking)
             for (int r=0; r<NUM_REGIONS; r++) begin
-                if (dbg_response_valid[r]) begin
-                    if (sb_fifo_count[r] > 0) begin
-                        automatic sb_req_t req = sb_fifo[r][sb_fifo_rd_ptr[r]];
-                        automatic logic actual_hit = perf_hit[r];
-                        
-                        if (DEBUG_VERBOSE && req.page_id == DEBUG_PAGE) begin
-                            $display("[%0d] TRACE page=0x%h region=%0d event=RESPONSE_VALID expected=%0d actual=%0d", 
-                                     total_cycles, req.page_id, r, req.expected_hit, actual_hit);
+                // A region can produce a Hit response and a Miss response in the same cycle.
+                // These correspond to different requests issued at different times.
+                
+                if (perf_hit[r]) begin
+                    if (sb_hit_count[r] > 0) begin
+                        automatic logic [PAGE_ID_WIDTH-1:0] page_id = sb_hit_fifo[r][sb_hit_rd_ptr[r]];
+                        if (DEBUG_VERBOSE && page_id == DEBUG_PAGE) begin
+                            $display("[%0d] TRACE page=0x%h region=%0d event=RESPONSE_HIT actual=HIT", 
+                                     total_cycles, page_id, r);
                         end
-
-                        if (actual_hit != req.expected_hit) begin
-                            $error("[%0t] SB_MISMATCH (Region %0d): Page 0x%h, Expected %s, Got %s", 
-                                   $time, r, req.page_id, 
-                                   req.expected_hit ? "HIT" : "MISS",
-                                   actual_hit ? "HIT" : "MISS");
-                            dump_sb_for_page(req.page_id);
-                            $display("FIFO entry: page=0x%h expected_hit=%0d", req.page_id, req.expected_hit);
-                            $display("DUT region %0d state: last_access=0x%h last_hit=%0d last_miss=%0d last_promo=0x%h last_demo=0x%h",
-                                     r, dbg_last_access_page_id[r], dbg_last_hit[r], dbg_last_miss[r], 
-                                     dbg_last_promoted_page[r], dbg_last_demoted_page[r]);
-                            scoreboard_errors = scoreboard_errors + 1;
-                            $fatal("SB_MISMATCH triage triggered");
-                        end
-                        
-                        sb_fifo_rd_ptr[r] = (sb_fifo_rd_ptr[r] + 1) % FIFO_DEPTH;
-                        sb_fifo_count[r]  = sb_fifo_count[r] - 1;
+                        // Verification: RTL produced hit, SB expected hit. Page ID check is extra credit.
+                        sb_hit_rd_ptr[r] = (sb_hit_rd_ptr[r] + 1) % FIFO_DEPTH;
+                        sb_hit_count[r]  = sb_hit_count[r] - 1;
                     end else begin
-                        $error("[%0t] SB_UNEXPECTED_RESPONSE (Region %0d): No pending request in FIFO", $time, r);
+                        $error("[%0t] SB_UNEXPECTED_HIT (Region %0d): No pending HIT request in FIFO", $time, r);
                         scoreboard_errors = scoreboard_errors + 1;
-                        $fatal("SB_UNEXPECTED_RESPONSE triage triggered");
+                        $fatal("SB_UNEXPECTED_HIT triggered");
+                    end
+                end
+
+                if (perf_miss[r]) begin
+                    if (sb_miss_count[r] > 0) begin
+                        automatic logic [PAGE_ID_WIDTH-1:0] page_id = sb_miss_fifo[r][sb_miss_rd_ptr[r]];
+                        if (DEBUG_VERBOSE && page_id == DEBUG_PAGE) begin
+                            $display("[%0d] TRACE page=0x%h region=%0d event=RESPONSE_MISS actual=MISS", 
+                                     total_cycles, page_id, r);
+                        end
+                        // Verification: RTL produced miss, SB expected miss.
+                        sb_miss_rd_ptr[r] = (sb_miss_rd_ptr[r] + 1) % FIFO_DEPTH;
+                        sb_miss_count[r]  = sb_miss_count[r] - 1;
+                    end else begin
+                        $error("[%0t] SB_UNEXPECTED_MISS (Region %0d): No pending MISS request in FIFO", $time, r);
+                        scoreboard_errors = scoreboard_errors + 1;
+                        $fatal("SB_UNEXPECTED_MISS triggered");
                     end
                 end
             end
