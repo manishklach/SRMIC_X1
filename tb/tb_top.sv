@@ -47,11 +47,21 @@ module tb_top;
     int     fd;
 
     // --- Scoreboard State ---
+    typedef enum logic [1:0] { 
+        NOT_RESIDENT      = 2'b00, 
+        PROMOTION_PENDING = 2'b01, 
+        RESIDENT          = 2'b10, 
+        DEMOTION_PENDING  = 2'b11 
+    } res_state_t;
+
+    res_state_t sb_state [0:SCOREBOARD_SIZE-1];
     logic [PAGE_ID_WIDTH-1:0] sb_resident_pages [0:SCOREBOARD_SIZE-1];
-    logic [SCOREBOARD_SIZE-1:0] sb_valid;
+    int sb_timer [0:SCOREBOARD_SIZE-1];
     
-    // Latency matching pipe for access IDs
-    logic [PAGE_ID_WIDTH-1:0] access_id_pipe [0:2];
+    // Latency matching pipe for access IDs and expected hit status
+    // Align with: Access Issue (T0) -> RTL Hit (T3) -> TB Capture (T4)
+    logic [PAGE_ID_WIDTH-1:0] access_id_pipe [0:3];
+    logic                     expected_hit_pipe [0:3];
 
     // ==================================================
     // DUT Instantiation
@@ -80,41 +90,79 @@ module tb_top;
     // ==================================================
     always_ff @(posedge clk) begin
         if (!rst_n) begin
-            sb_valid          <= 0;
             scoreboard_errors <= 0;
-            for (int i=0; i<3; i++) access_id_pipe[i] <= 0;
+            for (int i=0; i<SCOREBOARD_SIZE; i++) begin
+                sb_state[i]          <= NOT_RESIDENT;
+                sb_resident_pages[i] <= 0;
+                sb_timer[i]          <= 0;
+            end
+            for (int i=0; i<4; i++) begin
+                access_id_pipe[i]    <= 0;
+                expected_hit_pipe[i] <= 0;
+            end
         end else begin
-            // Pipe the access ID to match hit latency (2 cycles)
-            access_id_pipe[0] <= dut.synth_access_id;
-            access_id_pipe[1] <= access_id_pipe[0];
-            access_id_pipe[2] <= access_id_pipe[1];
+            // 1. Prediction at time of access issue (T0)
+            automatic logic current_hit = 1'b0;
+            for (int i=0; i<SCOREBOARD_SIZE; i++) begin
+                // A page is considered resident if it is already RESIDENT, 
+                // or if its promotion is completing in the current cycle.
+                if ((sb_state[i] == RESIDENT || (sb_state[i] == PROMOTION_PENDING && sb_timer[i] == 1)) && 
+                    (sb_resident_pages[i] == dut.synth_access_id)) begin
+                    current_hit = 1'b1;
+                end
+            end
 
-            // Track promotions
+            access_id_pipe[0]    <= dut.synth_access_id;
+            expected_hit_pipe[0] <= current_hit && dut.synth_access_valid;
+
+            // 2. Delay Pipeline (4 stages to match T4 capture)
+            for (int i=1; i<4; i++) begin
+                access_id_pipe[i]    <= access_id_pipe[i-1];
+                expected_hit_pipe[i] <= expected_hit_pipe[i-1];
+            end
+
+            // 3. Residency State Machine Updates
+            for (int i=0; i<SCOREBOARD_SIZE; i++) begin
+                if (sb_timer[i] > 1) begin
+                    sb_timer[i] <= sb_timer[i] - 1;
+                end else if (sb_timer[i] == 1) begin
+                    sb_timer[i] <= 0;
+                    if (sb_state[i] == PROMOTION_PENDING) sb_state[i] <= RESIDENT;
+                    if (sb_state[i] == DEMOTION_PENDING)  sb_state[i] <= NOT_RESIDENT;
+                end
+            end
+
+            // 4. Handle Promotions (4 cycle latency)
             if (perf_promo) begin
-                automatic int found;
-                found = -1;
+                automatic int found = -1;
                 for (int i=0; i<SCOREBOARD_SIZE; i++) begin
-                    if (!sb_valid[i]) begin 
+                    if (sb_state[i] == NOT_RESIDENT) begin 
                         found = i; 
                         break; 
                     end
                 end
                 if (found == -1) found = total_promos % SCOREBOARD_SIZE;
                 
+                sb_state[found]          <= PROMOTION_PENDING;
                 sb_resident_pages[found] <= dut.promote_page_id;
-                sb_valid[found]          <= 1'b1;
+                sb_timer[found]          <= 4;
+            end
+
+            // 5. Handle Demotions (1 cycle latency)
+            if (perf_demo) begin
+                for (int i=0; i<SCOREBOARD_SIZE; i++) begin
+                    if (sb_state[i] != NOT_RESIDENT && sb_resident_pages[i] == dut.demote_page_id) begin
+                        sb_state[i] <= DEMOTION_PENDING;
+                        sb_timer[i] <= 1;
+                        break;
+                    end
+                end
             end
             
-            // Validate hits against the ID from 2 cycles ago
+            // 6. Validate Hits against prediction from 4 cycles ago
             if (|perf_hit) begin
-                automatic logic page_found;
-                page_found = 1'b0;
-                for (int i=0; i<SCOREBOARD_SIZE; i++) begin
-                    if (sb_valid[i] && (sb_resident_pages[i] == access_id_pipe[1]))
-                        page_found = 1'b1;
-                end
-                if (!page_found) begin
-                    $error("[%0t] SB_MISMATCH: Unexpected hit for Page 0x%h", $time, access_id_pipe[1]);
+                if (!expected_hit_pipe[3]) begin
+                    $error("[%0t] SB_MISMATCH: Unexpected hit for Page 0x%h", $time, access_id_pipe[3]);
                     scoreboard_errors++;
                 end
             end

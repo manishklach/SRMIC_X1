@@ -183,7 +183,7 @@ module hrm_region #(
 `ifndef SYNTHESIS
     assert property (@(posedge clk) (access_valid && hit_comb) |-> valid_array[hit_index_comb]);
     assert property (@(posedge clk) demote_request |-> region_full);
-    assert property (@(posedge clk) 1'b1 |-> (victim_index < REGION_DEPTH));
+    assert property (@(posedge clk) 1'b1 |-> (victim_index < {{(32-$clog2(REGION_DEPTH)){1'b0}}, REGION_DEPTH[5:0]}));
     
     // Tag Uniqueness
     always_comb begin
