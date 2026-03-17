@@ -226,19 +226,27 @@ validate these effects quantitatively.
 
 # RTL Prototype
 
-This repository includes a **fully synthesizable SystemVerilog RTL prototype** of the SRMIC residency tier. It is packaged as a reviewable silicon bring-up baseline with automated verification, linting, and synthesis sanity checks.
+This repository includes a **fully synthesizable SystemVerilog RTL prototype** of the SRMIC residency tier. It is a cycle-accurate silicon bring-up baseline with automated verification, linting, and synchronization between hardware timing and testbench scoreboarding.
 
 ## 1. Module Overview
 
 | Module | File | Description |
 |---|---|---|
 | **RIC** | `rtl/ric.sv` | Residency Intelligence Controller. Arbitrates promotions/demotions and manages the token bucket throttle. |
-| **HRM Region** | `rtl/hrm_region.sv` | Distributed SRAM region controller with bank-level contention modeling and true LRU replacement. |
+| **HRM Region** | `rtl/hrm_region.sv` | Distributed SRAM region controller with bank-level contention modeling, 2-cycle hit latency, and 4-cycle promotion latency. |
 | **SRMESH Router** | `rtl/srmesh_router.sv` | Hardened 4-port mesh router with dual Virtual Channels (VC), WRR arbitration, and credit flow control. |
 | **Top Level** | `rtl/srmic_top.sv` | Structural integration of the controller, memory regions, and fabric. Includes synthetic traffic generation. |
-| **Testbench** | `tb/tb_top.sv` | System-level verification suite with a self-checking scoreboard and performance monitoring. |
+| **Testbench** | `tb/tb_top.sv` | System-level verification suite with a **synchronized residency state machine** and performance monitoring. |
 
-## 2. Build & Verification Flow
+## 2. Timing & Residency Model
+
+The v20 RTL baseline features a strictly synchronized residency model:
+*   **Promotion Latency:** 4 cycles (from request to valid residency).
+*   **Hit Latency:** 2 cycles (standard SRAM lookup pipeline).
+*   **Demotion Latency:** 1 cycle (synchronous invalidation).
+*   **Scoreboard:** Cycle-accurate residency tracking using a 4-stage pipeline to align predictions with RTL response timing.
+
+## 3. Build & Verification Flow
 
 The project uses a standard `Makefile` for all hardware tasks. Artifacts are generated in the `build/` directory.
 
