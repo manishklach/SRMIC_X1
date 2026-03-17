@@ -46,8 +46,12 @@ module tb_top;
     int     seed;
     int     fd;
 
+    // --- Scoreboard State ---
     logic [PAGE_ID_WIDTH-1:0] sb_resident_pages [0:SCOREBOARD_SIZE-1];
     logic [SCOREBOARD_SIZE-1:0] sb_valid;
+    
+    // Latency matching pipe for access IDs
+    logic [PAGE_ID_WIDTH-1:0] access_id_pipe [0:2];
 
     // ==================================================
     // DUT Instantiation
@@ -78,10 +82,17 @@ module tb_top;
         if (!rst_n) begin
             sb_valid          <= 0;
             scoreboard_errors <= 0;
+            for (int i=0; i<3; i++) access_id_pipe[i] <= 0;
         end else begin
+            // Pipe the access ID to match hit latency (2 cycles)
+            access_id_pipe[0] <= dut.synth_access_id;
+            access_id_pipe[1] <= access_id_pipe[0];
+            access_id_pipe[2] <= access_id_pipe[1];
+
             // Track promotions
             if (perf_promo) begin
-                automatic int found = -1;
+                automatic int found;
+                found = -1;
                 for (int i=0; i<SCOREBOARD_SIZE; i++) begin
                     if (!sb_valid[i]) begin 
                         found = i; 
@@ -94,15 +105,16 @@ module tb_top;
                 sb_valid[found]          <= 1'b1;
             end
             
-            // Validate hits
+            // Validate hits against the ID from 2 cycles ago
             if (|perf_hit) begin
-                automatic logic page_found = 1'b0;
+                automatic logic page_found;
+                page_found = 1'b0;
                 for (int i=0; i<SCOREBOARD_SIZE; i++) begin
-                    if (sb_valid[i] && (sb_resident_pages[i] == dut.synth_access_id))
+                    if (sb_valid[i] && (sb_resident_pages[i] == access_id_pipe[1]))
                         page_found = 1'b1;
                 end
                 if (!page_found) begin
-                    $error("[%0t] SB_MISMATCH: Unexpected hit for Page 0x%h", $time, dut.synth_access_id);
+                    $error("[%0t] SB_MISMATCH: Unexpected hit for Page 0x%h", $time, access_id_pipe[1]);
                     scoreboard_errors++;
                 end
             end

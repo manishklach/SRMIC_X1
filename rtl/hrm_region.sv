@@ -152,7 +152,7 @@ module hrm_region #(
             if (access_valid && !access_stall && hit_comb) begin
                 lru_counters[hit_index_comb] <= 3'd0;
                 for (int i = 0; i < REGION_DEPTH; i++) begin
-                    if (i != hit_index_comb && valid_array[i]) begin
+                    if (i != {{(32-$clog2(REGION_DEPTH)){1'b0}}, hit_index_comb} && valid_array[i]) begin
                         if (lru_counters[i] < 3'd7) lru_counters[i] <= lru_counters[i] + 1;
                     end
                 end
@@ -164,7 +164,7 @@ module hrm_region #(
                 valid_array[victim_index]  <= 1'b1;
                 lru_counters[victim_index] <= 3'd0;
                 for (int i = 0; i < REGION_DEPTH; i++) begin
-                    if (i != victim_index && valid_array[i]) begin
+                    if (i != {{(32-$clog2(REGION_DEPTH)){1'b0}}, victim_index} && valid_array[i]) begin
                         if (lru_counters[i] < 3'd7) lru_counters[i] <= lru_counters[i] + 1;
                     end
                 end

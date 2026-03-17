@@ -74,12 +74,14 @@ module srmesh_router #(
     logic                                   sel_vc;
     logic                                   found_grant;
     logic                                   preferred_vc;
+    logic [1:0]                             dest;
 
     always_comb begin
         found_grant = 1'b0;
         sel_port    = 0;
         sel_vc      = 0;
         preferred_vc = 0;
+        dest        = 0;
         
         for (int i = 0; i < 4; i++) begin
             logic [1:0] p;
@@ -88,8 +90,10 @@ module srmesh_router #(
             // Priority 1: Starvation Watchdog
             if (vc_full[p][0] && (starvation_cnt[p][0] > 16)) begin
                 sel_port = p; sel_vc = 0; found_grant = 1'b1;
+                dest = get_route(vc_buf[p][0]);
             end else if (vc_full[p][1] && (starvation_cnt[p][1] > 16)) begin
                 sel_port = p; sel_vc = 1; found_grant = 1'b1;
+                dest = get_route(vc_buf[p][1]);
             end
 
             if (found_grant) break;
@@ -97,16 +101,18 @@ module srmesh_router #(
             // Priority 2: WRR Arbitration
             preferred_vc = (wrr_state[p] < VC0_WEIGHT) ? 1'b0 : 1'b1;
             if (vc_full[p][preferred_vc]) begin
-                logic [1:0] dest;
-                dest = get_route(vc_buf[p][preferred_vc]);
-                if (credits[dest][preferred_vc] > 0) begin
+                logic [1:0] d;
+                d = get_route(vc_buf[p][preferred_vc]);
+                if (credits[d][preferred_vc] > 0) begin
                     sel_port = p; sel_vc = preferred_vc; found_grant = 1'b1;
+                    dest = d;
                 end
             end else if (vc_full[p][!preferred_vc]) begin
-                logic [1:0] dest;
-                dest = get_route(vc_buf[p][!preferred_vc]);
-                if (credits[dest][!preferred_vc] > 0) begin
+                logic [1:0] d;
+                d = get_route(vc_buf[p][!preferred_vc]);
+                if (credits[d][!preferred_vc] > 0) begin
                     sel_port = p; sel_vc = !preferred_vc; found_grant = 1'b1;
+                    dest = d;
                 end
             end
             
@@ -161,8 +167,6 @@ module srmesh_router #(
 
             // Process Grant
             if (found_grant) begin
-                logic [1:0] dest;
-                dest = get_route(vc_buf[sel_port][sel_vc]);
                 pipe_out_flit[dest]              <= vc_buf[sel_port][sel_vc];
                 pipe_out_valid[dest]             <= 1'b1;
                 pipe_out_vc_id[dest]             <= sel_vc;

@@ -219,7 +219,7 @@ module ric #(
                 // Update Age
                 region_age[promote_region_id] <= 0;
                 for (int i = 0; i < NUM_REGIONS; i++) begin
-                    if (i != promote_region_id && region_age[i] < 3'd7)
+                    if (i != {29'd0, promote_region_id} && region_age[i] < 3'd7)
                         region_age[i] <= region_age[i] + 1;
                 end
             end
