@@ -59,7 +59,9 @@ module hrm_region #(
     logic [2:0]                             lru_counters [0:REGION_DEPTH-1];
 
     // Latency Modeling Pipelines
-    logic [5:0]                             hit_pipe, miss_pipe;
+    logic                                   req_accept;
+    logic [5:0]                             resp_valid_pipe;
+    logic [5:0]                             resp_hit_pipe;
     logic [3:0]                             promo_ack_pipe;
     logic [PAGE_ID_WIDTH-1:0]               promote_page_id_pipe [0:3];
     logic [$clog2(REGION_DEPTH)-1:0]        victim_index_pipe [0:3];
@@ -91,6 +93,8 @@ module hrm_region #(
             if (target_bank == admin_bank) access_stall = 1'b1;
         end
     end
+
+    assign req_accept = access_valid && !access_stall;
 
     // Tag Match Logic
     always_comb begin
@@ -130,8 +134,8 @@ module hrm_region #(
     // Latency Modeling Pipelines: Hit=2c, Miss=6c, Promo=4c
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            hit_pipe            <= 0;
-            miss_pipe           <= 0;
+            resp_valid_pipe     <= 0;
+            resp_hit_pipe       <= 0;
             promo_ack_pipe      <= 0;
             response_valid      <= 0;
             hit                 <= 0;
@@ -148,13 +152,15 @@ module hrm_region #(
         end else begin
             if (access_stall) bank_conflict_count <= bank_conflict_count + 1;
 
-            if (access_valid && !access_stall) begin
+            if (req_accept) begin
                 dbg_last_access_page_id <= access_page_id;
             end
 
-            // Shift registers for latency
-            hit_pipe       <= {hit_pipe[4:0], (access_valid && !access_stall && hit_comb)};
-            miss_pipe      <= {miss_pipe[4:0], (access_valid && !access_stall && !hit_comb)};
+            // Unified Response Pipeline
+            // Only shift a non-zero entry on req_accept.
+            // Hit logic: hit_comb is captured on req_accept.
+            resp_valid_pipe <= {resp_valid_pipe[4:0], req_accept};
+            resp_hit_pipe   <= {resp_hit_pipe[4:0], (req_accept && hit_comb)};
             
             // Promotion Metadata Pipeline
             promo_ack_pipe <= {promo_ack_pipe[2:0], promote_valid};
@@ -166,15 +172,19 @@ module hrm_region #(
             end
 
             // Pipeline Outputs
-            hit            <= hit_pipe[1];   // 2 cycles
-            miss           <= miss_pipe[5];  // 6 cycles
-            response_valid <= hit_pipe[1] || miss_pipe[5];
+            // Hit is 2 cycles, Miss is 6 cycles.
+            // In the unified pipeline, hit status is carried through.
+            // A miss is effectively (resp_valid && !resp_hit).
+            
+            response_valid <= resp_valid_pipe[1] || resp_valid_pipe[5];
+            hit            <= resp_valid_pipe[1] && resp_hit_pipe[1];
+            miss           <= resp_valid_pipe[5] && !resp_hit_pipe[5];
             promote_ack    <= promo_ack_pipe[3]; // 4 cycles
 
-            if (hit_pipe[1]) dbg_last_hit <= 1'b1;
+            if (resp_valid_pipe[1] && resp_hit_pipe[1]) dbg_last_hit <= 1'b1;
             else if (response_valid) dbg_last_hit <= 1'b0;
 
-            if (miss_pipe[5]) dbg_last_miss <= 1'b1;
+            if (resp_valid_pipe[5] && !resp_hit_pipe[5]) dbg_last_miss <= 1'b1;
             else if (response_valid) dbg_last_miss <= 1'b0;
         end
     end
@@ -199,7 +209,7 @@ module hrm_region #(
             demote_ack <= 1'b0;
 
             // LRU Update
-            if (access_valid && !access_stall && hit_comb) begin
+            if (req_accept && hit_comb) begin
                 lru_counters[hit_index_comb] <= 3'd0;
                 for (int i = 0; i < REGION_DEPTH; i++) begin
                     if (i != {{(32-$clog2(REGION_DEPTH)){1'b0}}, hit_index_comb} && valid_array[i]) begin
@@ -249,7 +259,7 @@ module hrm_region #(
     // Assertions
     // ==================================================
 `ifndef SYNTHESIS
-    assert property (@(posedge clk) (access_valid && hit_comb) |-> valid_array[hit_index_comb]);
+    assert property (@(posedge clk) (req_accept && hit_comb) |-> valid_array[hit_index_comb]);
     assert property (@(posedge clk) demote_request |-> region_full);
 
     always @(posedge clk) begin
@@ -263,6 +273,12 @@ module hrm_region #(
                     else $error("HRM_PROMO_ERROR: Valid bit not set at commit time");
                 assert (tag_array[promo_commit_check_index] == promo_commit_check_page_id)
                     else $error("HRM_PROMO_ERROR: Tag mismatch at commit time");
+            end
+
+            // Assertion: every response corresponds to exactly one accepted request
+            if (response_valid) begin
+                assert (resp_valid_pipe[1] || resp_valid_pipe[5])
+                    else $error("HRM_RESPONSE_ERROR: response_valid without accepted request");
             end
         end
     end
