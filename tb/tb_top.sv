@@ -214,8 +214,12 @@ module tb_top;
             // the exact page being written to tag_array this cycle.
             for (int r=0; r<NUM_REGIONS; r++) begin
                 if (hrm_promote_ack_internal[r]) begin
+                    // dbg_last_promoted_page is set when promo_ack_pipe[3]=1,
+                    // one cycle before promote_ack output register fires.
+                    // This is the correct page — pipe[3] has already shifted
+                    // by the time promote_ack=1 is observable.
                     automatic logic [PAGE_ID_WIDTH-1:0] committed_page =
-                        dbg_promote_committed_page[r];
+                        dbg_last_promoted_page[r];
                     automatic logic found_it = 1'b0;
                     for (int i=0; i<SCOREBOARD_SIZE; i++) begin
                         if (sb_state[i] == PROMOTION_PENDING &&
