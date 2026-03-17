@@ -17,6 +17,7 @@ module tb_top;
     localparam PAGE_ID_WIDTH   = 16;
     localparam SCOREBOARD_SIZE = 256;
     localparam RUN_CYCLES      = 20000;
+    localparam FIFO_DEPTH      = 16;
 
     // ==================================================
     // Ports / Signals
@@ -46,7 +47,7 @@ module tb_top;
     int     seed;
     int     fd;
 
-    // --- Scoreboard State ---
+    // --- Scoreboard Residency State ---
     typedef enum logic [1:0] { 
         NOT_RESIDENT      = 2'b00, 
         PROMOTION_PENDING = 2'b01, 
@@ -58,10 +59,14 @@ module tb_top;
     logic [PAGE_ID_WIDTH-1:0] sb_resident_pages [0:SCOREBOARD_SIZE-1];
     int sb_timer [0:SCOREBOARD_SIZE-1];
     
-    // Latency matching pipe for access IDs and expected hit status
-    // Align with: Access Issue (T0) -> RTL Hit (T3) -> TB Capture (T4)
-    logic [PAGE_ID_WIDTH-1:0] access_id_pipe [0:3];
-    logic                     expected_hit_pipe [0:3];
+    // --- Scoreboard Response FIFO ---
+    typedef struct packed {
+        logic [PAGE_ID_WIDTH-1:0] page_id;
+        logic                     expected_hit;
+    } sb_req_t;
+
+    sb_req_t sb_fifo [0:FIFO_DEPTH-1];
+    int sb_fifo_wr_ptr, sb_fifo_rd_ptr, sb_fifo_count;
 
     // ==================================================
     // DUT Instantiation
@@ -91,37 +96,39 @@ module tb_top;
     always_ff @(posedge clk) begin
         if (!rst_n) begin
             scoreboard_errors <= 0;
+            sb_fifo_wr_ptr    <= 0;
+            sb_fifo_rd_ptr    <= 0;
+            sb_fifo_count     <= 0;
             for (int i=0; i<SCOREBOARD_SIZE; i++) begin
                 sb_state[i]          <= NOT_RESIDENT;
                 sb_resident_pages[i] <= 0;
                 sb_timer[i]          <= 0;
             end
-            for (int i=0; i<4; i++) begin
-                access_id_pipe[i]    <= 0;
-                expected_hit_pipe[i] <= 0;
-            end
         end else begin
             // 1. Prediction at time of access issue (T0)
-            automatic logic current_hit = 1'b0;
-            for (int i=0; i<SCOREBOARD_SIZE; i++) begin
-                // A page is considered resident if it is already RESIDENT, 
-                // or if its promotion is completing in the current cycle.
-                if ((sb_state[i] == RESIDENT || (sb_state[i] == PROMOTION_PENDING && sb_timer[i] == 1)) && 
-                    (sb_resident_pages[i] == dut.synth_access_id)) begin
-                    current_hit = 1'b1;
+            if (dut.synth_access_valid && !(|dut.gen_regions[0].i_hrm.access_stall)) begin
+                automatic logic current_hit = 1'b0;
+                for (int i=0; i<SCOREBOARD_SIZE; i++) begin
+                    // A page is considered resident if it is already RESIDENT, 
+                    // or if its promotion is completing in the current cycle.
+                    if ((sb_state[i] == RESIDENT || (sb_state[i] == PROMOTION_PENDING && sb_timer[i] == 1)) && 
+                        (sb_resident_pages[i] == dut.synth_access_id)) begin
+                        current_hit = 1'b1;
+                    end
+                end
+
+                if (sb_fifo_count < FIFO_DEPTH) begin
+                    sb_fifo[sb_fifo_wr_ptr].page_id      <= dut.synth_access_id;
+                    sb_fifo[sb_fifo_wr_ptr].expected_hit <= current_hit;
+                    sb_fifo_wr_ptr <= (sb_fifo_wr_ptr + 1) % FIFO_DEPTH;
+                    sb_fifo_count  <= sb_fifo_count + 1;
+                end else begin
+                    $error("[%0t] SB_FIFO_OVERFLOW: Increase FIFO_DEPTH", $time);
+                    scoreboard_errors++;
                 end
             end
 
-            access_id_pipe[0]    <= dut.synth_access_id;
-            expected_hit_pipe[0] <= current_hit && dut.synth_access_valid;
-
-            // 2. Delay Pipeline (4 stages to match T4 capture)
-            for (int i=1; i<4; i++) begin
-                access_id_pipe[i]    <= access_id_pipe[i-1];
-                expected_hit_pipe[i] <= expected_hit_pipe[i-1];
-            end
-
-            // 3. Residency State Machine Updates
+            // 2. Residency State Machine Updates
             for (int i=0; i<SCOREBOARD_SIZE; i++) begin
                 if (sb_timer[i] > 1) begin
                     sb_timer[i] <= sb_timer[i] - 1;
@@ -132,7 +139,7 @@ module tb_top;
                 end
             end
 
-            // 4. Handle Promotions (4 cycle latency)
+            // 3. Handle Promotions (4 cycle latency)
             if (perf_promo) begin
                 automatic int found = -1;
                 for (int i=0; i<SCOREBOARD_SIZE; i++) begin
@@ -148,7 +155,7 @@ module tb_top;
                 sb_timer[found]          <= 4;
             end
 
-            // 5. Handle Demotions (1 cycle latency)
+            // 4. Handle Demotions (1 cycle latency)
             if (perf_demo) begin
                 for (int i=0; i<SCOREBOARD_SIZE; i++) begin
                     if (sb_state[i] != NOT_RESIDENT && sb_resident_pages[i] == dut.demote_page_id) begin
@@ -159,10 +166,25 @@ module tb_top;
                 end
             end
             
-            // 6. Validate Hits against prediction from 4 cycles ago
-            if (|perf_hit) begin
-                if (!expected_hit_pipe[3]) begin
-                    $error("[%0t] SB_MISMATCH: Unexpected hit for Page 0x%h", $time, access_id_pipe[3]);
+            // 5. Validate at Response Time
+            // Wait for response_valid from any region (they are synced in this simple model)
+            if (|dut.gen_regions[0].i_hrm.response_valid) begin
+                if (sb_fifo_count > 0) begin
+                    automatic sb_req_t req = sb_fifo[sb_fifo_rd_ptr];
+                    automatic logic actual_hit = |perf_hit;
+                    
+                    if (actual_hit != req.expected_hit) begin
+                        $error("[%0t] SB_MISMATCH: Page 0x%h, Expected %s, Got %s", 
+                               $time, req.page_id, 
+                               req.expected_hit ? "HIT" : "MISS",
+                               actual_hit ? "HIT" : "MISS");
+                        scoreboard_errors++;
+                    end
+                    
+                    sb_fifo_rd_ptr <= (sb_fifo_rd_ptr + 1) % FIFO_DEPTH;
+                    sb_fifo_count  <= sb_fifo_count - 1;
+                end else begin
+                    $error("[%0t] SB_UNEXPECTED_RESPONSE: No pending request in FIFO", $time);
                     scoreboard_errors++;
                 end
             end
