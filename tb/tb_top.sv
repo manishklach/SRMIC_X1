@@ -266,6 +266,8 @@ module tb_top;
                 sb_resident_pages[found] = dut.promote_page_id;
                 sb_region[found]         = promote_target_region_wire;
                 sb_timer[found]          = 4;
+                if (total_cycles > 3600 && total_cycles < 3900)
+                    $display("[%0d] PROMO_TRACE page=0x%h region=%0d", total_cycles, dut.promote_page_id, promote_target_region_wire);
                 if (DEBUG_VERBOSE && dut.promote_page_id==DEBUG_PAGE)
                     $display("[%0d] TRACE page=0x%h event=PROMOTION_ISSUED region=%0d",
                              total_cycles, dut.promote_page_id, dut.promote_region_id);
