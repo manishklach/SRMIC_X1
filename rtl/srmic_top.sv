@@ -29,7 +29,9 @@ module srmic_top #(
     output logic [31:0]                     perf_bank_conflicts,
     output logic [31:0]                     perf_router_stalls,
 
-    // Debug Observability
+    // Performance Monitoring (synthesis-visible)
+    // Debug ports excluded from synthesis via `ifndef SYNTHESIS
+`ifndef SYNTHESIS
     output logic [2:0]                      dbg_ric_state,
     output logic [4:0]                      dbg_fifo_count,
     output logic [3:0]                      dbg_credit_counter,
@@ -38,27 +40,20 @@ module srmic_top #(
     output logic [31:0]                     dbg_bank_conflicts [0:NUM_REGIONS-1],
     output logic [1:0]                      dbg_router_grant_port,
     output logic                            dbg_router_active_vc,
-
-    // Extended Debug Observability for Testbench
     output logic [NUM_REGIONS-1:0]          dbg_access_stall,
     output logic [NUM_REGIONS-1:0]          dbg_response_valid,
     output logic [NUM_REGIONS-1:0]          dbg_region_hit,
     output logic [NUM_REGIONS-1:0]          dbg_region_miss,
-
     output logic [PAGE_ID_WIDTH-1:0]        dbg_last_access_page_id [0:NUM_REGIONS-1],
     output logic [NUM_REGIONS-1:0]          dbg_last_hit,
     output logic [NUM_REGIONS-1:0]          dbg_last_miss,
     output logic [PAGE_ID_WIDTH-1:0]        dbg_last_promoted_page  [0:NUM_REGIONS-1],
     output logic [PAGE_ID_WIDTH-1:0]        dbg_last_demoted_page   [0:NUM_REGIONS-1],
-
-    // Traffic Gen Visibility
     output logic                            dbg_synth_access_valid,
     output logic [PAGE_ID_WIDTH-1:0]        dbg_synth_access_id,
-
-    // Promotion commit observability — page committed at promote_ack per region
     output logic [PAGE_ID_WIDTH-1:0]        dbg_promote_committed_page [0:NUM_REGIONS-1],
-    // Expose promote_region_id for scoreboard region tracking
     output logic [$clog2(NUM_REGIONS)-1:0]  promote_target_region
+`endif
 );
 
     // ==================================================
@@ -81,6 +76,11 @@ module srmic_top #(
     logic [NUM_REGIONS-1:0]                 hrm_hit;
     logic [NUM_REGIONS-1:0]                 hrm_miss;
     logic [31:0]                            hrm_bank_conflicts [0:NUM_REGIONS-1];
+`ifdef SYNTHESIS
+    // Synthesis-mode wires for debug ports that are excluded from port list
+    logic [NUM_REGIONS-1:0]                 synth_access_stall;
+    logic [NUM_REGIONS-1:0]                 synth_response_valid;
+`endif
 
     // Real demote page IDs from HRM regions
     logic [PAGE_ID_WIDTH-1:0]               hrm_demote_page_id [0:NUM_REGIONS-1];
@@ -97,9 +97,11 @@ module srmic_top #(
     logic [15:0]                            lfsr;
 
     // Traffic Visibility assignments
+`ifndef SYNTHESIS
     assign dbg_synth_access_valid  = synth_access_valid;
     assign dbg_synth_access_id     = synth_access_id;
     assign promote_target_region   = promote_region_id;
+`endif
 
     // ==================================================
     // Combinational Logic
@@ -108,7 +110,9 @@ module srmic_top #(
         perf_bank_conflicts = 0;
         for (int i = 0; i < NUM_REGIONS; i++) begin
             perf_bank_conflicts += hrm_bank_conflicts[i];
+`ifndef SYNTHESIS
             dbg_bank_conflicts[i] = hrm_bank_conflicts[i];
+`endif
         end
     end
 
@@ -165,11 +169,13 @@ module srmic_top #(
         .demote_valid(demote_valid),
         .demote_page_id(), // Overridden by hrm_demote_page_id mux below
         .region_demote_ack(region_demote_ack),
+`ifndef SYNTHESIS
         .dbg_state(dbg_ric_state),
         .dbg_fifo_count(dbg_fifo_count),
         .dbg_credit_counter(dbg_credit_counter),
         .dbg_target_region(dbg_selected_region),
         .dbg_occupancy(dbg_occupancy)
+`endif
     );
 
     // HRM Regions
@@ -184,25 +190,34 @@ module srmic_top #(
                 .promote_valid(promote_valid && (promote_region_id == i)),
                 .promote_page_id(promote_page_id),
                 .promote_ack(hrm_promote_ack[i]),
-                .demote_request(demote_valid && (dbg_selected_region == i)),
+                .demote_request(demote_valid && (promote_region_id == i[1:0])),
                 .demote_ack(hrm_demote_ack[i]),
                 .demote_page_id(hrm_demote_page_id[i]),
                 .access_valid(synth_access_valid), 
                 .access_page_id(synth_access_id),
+`ifdef SYNTHESIS
+                .access_stall(synth_access_stall[i]),
+                .response_valid(synth_response_valid[i]),
+`else
                 .access_stall(dbg_access_stall[i]),
                 .response_valid(dbg_response_valid[i]),
+`endif
                 .hit(hrm_hit[i]),
                 .miss(hrm_miss[i]),
                 .region_full(region_full[i]),
                 .bank_conflict_count(hrm_bank_conflicts[i]),
+`ifndef SYNTHESIS
                 .dbg_last_access_page_id(dbg_last_access_page_id[i]),
                 .dbg_last_hit(dbg_last_hit[i]),
                 .dbg_last_miss(dbg_last_miss[i]),
                 .dbg_last_promoted_page(dbg_last_promoted_page[i]),
                 .dbg_last_demoted_page(dbg_last_demoted_page[i])
+`endif
             );
+`ifndef SYNTHESIS
             assign dbg_region_hit[i]  = hrm_hit[i];
             assign dbg_region_miss[i] = hrm_miss[i];
+`endif
         end
     endgenerate
 
@@ -218,12 +233,14 @@ module srmic_top #(
         end
     end
 
+`ifndef SYNTHESIS
     // Wire committed page per region from HRM pipeline
     generate
         for (genvar i = 0; i < NUM_REGIONS; i++) begin : gen_committed_page
             assign dbg_promote_committed_page[i] = gen_regions[i].i_hrm.promote_page_id_pipe[3];
         end
     endgenerate
+`endif
 
     // Mesh Router
     srmesh_router i_router (
@@ -237,8 +254,10 @@ module srmic_top #(
         .out_flit(dummy_out_flit),
         .out_vc_id(dummy_out_vc_id),
         .out_credit_ret(4'b0),
+`ifndef SYNTHESIS
         .dbg_grant_port(dbg_router_grant_port),
         .dbg_active_vc(dbg_router_active_vc),
+`endif
         .dbg_stall_cycles(perf_router_stalls)
     );
 

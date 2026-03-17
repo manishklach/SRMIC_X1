@@ -2,10 +2,10 @@
 # Runs from build/ directory via: cd build && yosys ../scripts/run_yosys.ys
 
 # 1. Read RTL modules
-read_verilog -sv ../rtl/ric.sv
-read_verilog -sv ../rtl/hrm_region.sv
-read_verilog -sv ../rtl/srmesh_router.sv
-read_verilog -sv ../rtl/srmic_top.sv
+read_verilog -sv -DSYNTHESIS ../rtl/ric.sv
+read_verilog -sv -DSYNTHESIS ../rtl/hrm_region.sv
+read_verilog -sv -DSYNTHESIS ../rtl/srmesh_router.sv
+read_verilog -sv -DSYNTHESIS ../rtl/srmic_top.sv
 
 # 2. Hierarchy Check
 hierarchy -check -top srmic_top

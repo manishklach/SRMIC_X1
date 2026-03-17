@@ -47,8 +47,10 @@ module ric #(
     output logic [2:0]                      dbg_state,
     output logic [4:0]                      dbg_fifo_count,
     output logic [3:0]                      dbg_credit_counter,
-    output logic [1:0]                      dbg_target_region,
-    output logic [6:0]                      dbg_occupancy [0:3]
+    output logic [1:0]                      dbg_target_region
+`ifndef SYNTHESIS
+    ,output logic [6:0]                     dbg_occupancy [0:3]
+`endif
 );
 
     // ==================================================
@@ -170,9 +172,11 @@ module ric #(
     assign dbg_fifo_count     = fifo_count[4:0];
     assign dbg_credit_counter = credit_counter;
     assign dbg_target_region  = target_region[1:0];
+`ifndef SYNTHESIS
     always_comb begin
         for (int i = 0; i < 4; i++) dbg_occupancy[i] = occupancy[i][6:0];
     end
+`endif
 
     // ==================================================
     // Sequential Logic
