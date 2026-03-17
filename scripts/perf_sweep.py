@@ -27,19 +27,15 @@ def run_sim(region, depth, seed):
     
     # Recompile with verilator overriding parameters
     compile_cmd = [
-        "verilator", "--cc", "--assert", "-Wno-fatal", "-Mdir", "build/obj_dir",
+        "verilator", "--binary", "--timing", "--assert", "-Wno-fatal", "-Mdir", "build/obj_dir",
         f"-GNUM_REGIONS={region}", f"-GREGION_DEPTH={depth}",
         "rtl/ric.sv", "rtl/hrm_region.sv", "rtl/srmesh_router.sv", "rtl/srmic_top.sv",
-        "--exe", "tb/tb_top.sv", "--top-module", "srmic_top"
+        "tb/tb_top.sv", "--top-module", "tb_top"
     ]
     subprocess.run(compile_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     
-    # Build
-    subprocess.run(["make", "-C", "build/obj_dir", "-j", "-f", "Vsrmic_top.mk", "Vsrmic_top"], 
-                   check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    
     # Run
-    run_cmd = [f"./build/obj_dir/Vsrmic_top", f"+seed={seed}"]
+    run_cmd = [f"./build/obj_dir/Vtb_top", f"+seed={seed}"]
     subprocess.run(run_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     
     # Parse results

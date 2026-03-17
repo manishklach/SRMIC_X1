@@ -3,7 +3,7 @@
 # ============================================================================
 
 # --- Parameters ---
-TOP_MODULE = srmic_top
+TOP_MODULE = tb_top
 RTL_SRC    = rtl/ric.sv rtl/hrm_region.sv rtl/srmesh_router.sv rtl/srmic_top.sv
 TB_SRC     = tb/tb_top.sv
 BUILD_DIR  = build
@@ -25,8 +25,7 @@ all: lint sim formal synth
 # --- Verilator Simulation ---
 sim: $(BUILD_DIR)
 	@echo "--- [VERILATOR] Compiling and Building ---"
-	$(VERILATOR) --cc --trace --assert -Wall -Wno-fatal -Mdir $(OBJ_DIR) $(RTL_SRC) --exe $(TB_SRC) --top-module $(TOP_MODULE)
-	make -C $(OBJ_DIR) -j -f V$(TOP_MODULE).mk V$(TOP_MODULE)
+	$(VERILATOR) --binary --timing --trace --assert -Wno-lint -Wno-style -Wno-fatal -Mdir $(OBJ_DIR) $(RTL_SRC) $(TB_SRC) --top-module $(TOP_MODULE)
 	@echo "--- [VERILATOR] Running Simulation ---"
 	cd $(BUILD_DIR) && ./obj_dir/V$(TOP_MODULE) +seed=$(SEED)
 
@@ -40,8 +39,7 @@ sim-iverilog: $(BUILD_DIR)
 # --- Multi-Chiplet Simulation Scaffold ---
 sim-multichiplet: $(BUILD_DIR)
 	@echo "--- [VERILATOR] Compiling Multi-Chiplet TB ---"
-	$(VERILATOR) --cc --trace --assert -Wall -Wno-fatal -Mdir $(OBJ_DIR)_mc $(RTL_SRC) --exe ../tb/tb_multichiplet.sv --top-module tb_multichiplet
-	make -C $(OBJ_DIR)_mc -j -f Vtb_multichiplet.mk Vtb_multichiplet
+	$(VERILATOR) --binary --timing --trace --assert -Wno-lint -Wno-style -Wno-fatal -Mdir $(OBJ_DIR)_mc $(RTL_SRC) tb/tb_multichiplet.sv --top-module tb_multichiplet
 	@echo "--- [VERILATOR] Running Multi-Chiplet Simulation ---"
 	cd $(BUILD_DIR) && ./obj_dir_mc/Vtb_multichiplet
 
