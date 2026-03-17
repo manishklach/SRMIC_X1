@@ -224,7 +224,63 @@ validate these effects quantitatively.
 
 ---
 
-## 9. Repository Structure
+## 9. SRMIC RTL Prototype (Hardened & Verification-Ready)
+
+Beyond the analytical model, this repository now contains a **fully synthesizable SystemVerilog RTL prototype** of the SRMIC residency tier. This implementation moves from first-order latency assumptions to structural hardware correctness.
+
+### 9.1 RTL Architecture Modules
+
+*   **`ric.sv` (Residency Intelligence Controller):**
+    *   **True Occupancy Tracking:** Maintains per-region entry counts to prevent over-allocation.
+    *   **Deterministic Victim Selection:** Implements a Region-LRU age counter for residency arbitration.
+    *   **Promotion-Demotion Atomicity:** A 5-state FSM ensures demotions are acknowledged before new promotions to at-capacity regions.
+    *   **Token Bucket Throttle:** Manages promotion injection rates based on available credits and thermal status.
+*   **`hrm_region.sv` (HRM Region Controller):**
+    *   **4-Bank Conflict Model:** Accesses are stalled if "admin" (promotion/demotion) tasks are active.
+    *   **Parallel Tag Compare:** Combinational tag matching logic with registered outputs.
+    *   **True LRU Replacement:** 3-bit age counters per entry for deterministic victim selection.
+*   **`srmesh_router.sv` (4-Port Mesh Router):**
+    *   **2 Virtual Channels:** Separate traffic classes (VC0, VC1) with independent credit counters.
+    *   **Weighted Round Robin (WRR):** Fairness-guaranteed arbitration between virtual channels.
+    *   **Credit-Based Flow Control:** Full backpressure propagation to prevent flit loss.
+*   **`srmic_top.sv` (Top-Level Integration):**
+    *   Integrates 1 RIC, 4 HRM Regions, and a 2x2 mesh of routers.
+    *   **Latency Modeling:** Structural 4-cycle promotion latency pipeline.
+    *   **Synthetic Traffic Gen:** LFSR-based generator for burst misses and re-access patterns.
+
+### 9.2 Verification & SVA
+
+The RTL includes **SystemVerilog Assertions (SVA)** to enforce hardware invariants:
+*   No FIFO overflow or credit underflow.
+*   No duplicate entries in the promotion pin table.
+*   No simultaneous promote/demote operations on the same region.
+*   Demote-only-when-full enforcement.
+
+### 9.3 Simulation Instructions
+
+The prototype is compatible with **Verilator** and **Yosys**.
+
+**Compilation (Verilator):**
+```bash
+verilator --cc rtl/ric.sv rtl/hrm_region.sv rtl/srmesh_router.sv rtl/srmic_top.sv \
+          --exe tb/tb_top.sv --top-module srmic_top --assert -Wno-fatal
+```
+
+**Running the Testbench:**
+The testbench (`tb_top.sv`) runs for 20,000 cycles and prints a performance summary including:
+*   Total HRM Hits/Misses
+*   Aggregate Hit Rate
+*   Modeled Average Access Latency (Hit=2c, Miss=6c)
+
+### 9.4 Waveform Inspection
+Monitor these key signals in `srmic_hardened.vcd`:
+*   `dut.i_ric.state`: FSM arbitration state.
+*   `dut.i_ric.occupancy[3:0]`: Real-time region fill levels.
+*   `dut.i_ric.credit_counter`: Token bucket status.
+
+---
+
+## 10. Repository Structure
 
 ```
 core/
