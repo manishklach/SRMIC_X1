@@ -81,7 +81,7 @@ module tb_top;
         end else begin
             // Track promotions
             if (perf_promo) begin
-                int found = -1;
+                automatic int found = -1;
                 for (int i=0; i<SCOREBOARD_SIZE; i++) begin
                     if (!sb_valid[i]) begin 
                         found = i; 
@@ -96,7 +96,7 @@ module tb_top;
             
             // Validate hits
             if (|perf_hit) begin
-                logic page_found = 1'b0;
+                automatic logic page_found = 1'b0;
                 for (int i=0; i<SCOREBOARD_SIZE; i++) begin
                     if (sb_valid[i] && (sb_resident_pages[i] == dut.synth_access_id))
                         page_found = 1'b1;

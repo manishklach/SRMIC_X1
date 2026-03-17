@@ -1,3 +1,5 @@
+`timescale 1ns/1ps
+
 // ============================================================================
 // Module: srmesh_router
 // Project: SRMIC-X1
@@ -58,8 +60,10 @@ module srmesh_router #(
     // Combinational Logic
     // ==================================================
     function logic [1:0] get_route(input [FLIT_WIDTH-1:0] flit);
-        logic [1:0] dx = flit[59:58];
-        logic [1:0] dy = flit[57:56];
+        logic [1:0] dx;
+        logic [1:0] dy;
+        dx = flit[59:58];
+        dy = flit[57:56];
         if (dx > ROUTER_X)      return 2'd2; // East
         else if (dx < ROUTER_X) return 2'd3; // West
         else if (dy > ROUTER_Y) return 2'd1; // South
@@ -78,7 +82,8 @@ module srmesh_router #(
         preferred_vc = 0;
         
         for (int i = 0; i < 4; i++) begin
-            logic [1:0] p = port_rr + i[1:0];
+            logic [1:0] p;
+            p = port_rr + i[1:0];
             
             // Priority 1: Starvation Watchdog
             if (vc_full[p][0] && (starvation_cnt[p][0] > 16)) begin
@@ -92,12 +97,14 @@ module srmesh_router #(
             // Priority 2: WRR Arbitration
             preferred_vc = (wrr_state[p] < VC0_WEIGHT) ? 1'b0 : 1'b1;
             if (vc_full[p][preferred_vc]) begin
-                logic [1:0] dest = get_route(vc_buf[p][preferred_vc]);
+                logic [1:0] dest;
+                dest = get_route(vc_buf[p][preferred_vc]);
                 if (credits[dest][preferred_vc] > 0) begin
                     sel_port = p; sel_vc = preferred_vc; found_grant = 1'b1;
                 end
             end else if (vc_full[p][!preferred_vc]) begin
-                logic [1:0] dest = get_route(vc_buf[p][!preferred_vc]);
+                logic [1:0] dest;
+                dest = get_route(vc_buf[p][!preferred_vc]);
                 if (credits[dest][!preferred_vc] > 0) begin
                     sel_port = p; sel_vc = !preferred_vc; found_grant = 1'b1;
                 end
@@ -154,7 +161,8 @@ module srmesh_router #(
 
             // Process Grant
             if (found_grant) begin
-                logic [1:0] dest = get_route(vc_buf[sel_port][sel_vc]);
+                logic [1:0] dest;
+                dest = get_route(vc_buf[sel_port][sel_vc]);
                 pipe_out_flit[dest]              <= vc_buf[sel_port][sel_vc];
                 pipe_out_valid[dest]             <= 1'b1;
                 pipe_out_vc_id[dest]             <= sel_vc;

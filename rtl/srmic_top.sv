@@ -1,3 +1,5 @@
+`timescale 1ns/1ps
+
 // ============================================================================
 // Module: srmic_top
 // Project: SRMIC-X1
@@ -58,6 +60,15 @@ module srmic_top #(
     logic [NUM_REGIONS-1:0]                 hrm_hit;
     logic [NUM_REGIONS-1:0]                 hrm_miss;
     logic [31:0]                            hrm_bank_conflicts [0:NUM_REGIONS-1];
+
+    // Dummy Wires to capture unconnected outputs
+    logic [PAGE_ID_WIDTH-1:0]               dummy_demote_page_id [0:NUM_REGIONS-1];
+    logic [NUM_REGIONS-1:0]                 dummy_access_stall;
+    logic [NUM_REGIONS-1:0]                 dummy_response_valid;
+    logic [3:0]                             dummy_in_credit_ret;
+    logic [3:0]                             dummy_out_valid;
+    logic [FLIT_WIDTH-1:0]                  dummy_out_flit [0:3];
+    logic [3:0]                             dummy_out_vc_id;
 
     // Synthetic Traffic Generation
     logic [PAGE_ID_WIDTH-1:0]               synth_miss_page_id;
@@ -151,11 +162,11 @@ module srmic_top #(
                 .promote_ack(hrm_promote_ack[i]),
                 .demote_request(demote_valid && (promote_region_id == i)),
                 .demote_ack(hrm_demote_ack[i]),
-                .demote_page_id(),
+                .demote_page_id(dummy_demote_page_id[i]),
                 .access_valid(synth_access_valid), 
                 .access_page_id(synth_access_id),
-                .access_stall(),
-                .response_valid(),
+                .access_stall(dummy_access_stall[i]),
+                .response_valid(dummy_response_valid[i]),
                 .hit(hrm_hit[i]),
                 .miss(hrm_miss[i]),
                 .region_full(region_full[i]),
@@ -173,10 +184,10 @@ module srmic_top #(
         .in_valid(4'b0),
         .in_flit('{default:0}),
         .in_vc_id(4'b0),
-        .in_credit_ret(),
-        .out_valid(),
-        .out_flit(),
-        .out_vc_id(),
+        .in_credit_ret(dummy_in_credit_ret),
+        .out_valid(dummy_out_valid),
+        .out_flit(dummy_out_flit),
+        .out_vc_id(dummy_out_vc_id),
         .out_credit_ret(4'b0),
         .dbg_grant_port(dbg_router_grant_port),
         .dbg_active_vc(dbg_router_active_vc),
