@@ -276,8 +276,11 @@ module hrm_region #(
             end
 
             // Assertion: every response corresponds to exactly one accepted request
+            // We check that response_valid (assigned from pipe in prev cycle)
+            // corresponds to the pipe stages. Since pipe also shifted, 
+            // we use $past to check the values that actually drove the register.
             if (response_valid) begin
-                assert (resp_valid_pipe[1] || resp_valid_pipe[5])
+                assert ($past(resp_valid_pipe[1] || resp_valid_pipe[5]))
                     else $error("HRM_RESPONSE_ERROR: response_valid without accepted request");
             end
         end
