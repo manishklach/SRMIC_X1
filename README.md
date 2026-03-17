@@ -224,59 +224,47 @@ validate these effects quantitatively.
 
 ---
 
-## 9. SRMIC RTL Prototype (Hardened & Verification-Ready)
+## 9. SRMIC Silicon Bring-up Package
 
-Beyond the analytical model, this repository now contains a **fully synthesizable SystemVerilog RTL prototype** of the SRMIC residency tier. This implementation moves from first-order latency assumptions to structural hardware correctness.
+The RTL has been upgraded from a functional prototype to a **reviewable microarchitecture baseline**. This version includes hardened fabric logic, memory bank contention modeling, and a self-checking verification environment.
 
-### 9.1 RTL Architecture Modules
+### 9.1 Key Microarchitectural Features
 
-*   **`ric.sv` (Residency Intelligence Controller):**
-    *   **True Occupancy Tracking:** Maintains per-region entry counts to prevent over-allocation.
-    *   **Deterministic Victim Selection:** Implements a Region-LRU age counter for residency arbitration.
-    *   **Promotion-Demotion Atomicity:** A 5-state FSM ensures demotions are acknowledged before new promotions to at-capacity regions.
-    *   **Token Bucket Throttle:** Manages promotion injection rates based on available credits and thermal status.
-*   **`hrm_region.sv` (HRM Region Controller):**
-    *   **4-Bank Conflict Model:** Accesses are stalled if "admin" (promotion/demotion) tasks are active.
-    *   **Parallel Tag Compare:** Combinational tag matching logic with registered outputs.
-    *   **True LRU Replacement:** 3-bit age counters per entry for deterministic victim selection.
-*   **`srmesh_router.sv` (4-Port Mesh Router):**
-    *   **2 Virtual Channels:** Separate traffic classes (VC0, VC1) with independent credit counters.
-    *   **Weighted Round Robin (WRR):** Fairness-guaranteed arbitration between virtual channels.
-    *   **Credit-Based Flow Control:** Full backpressure propagation to prevent flit loss.
-*   **`srmic_top.sv` (Top-Level Integration):**
-    *   Integrates 1 RIC, 4 HRM Regions, and a 2x2 mesh of routers.
-    *   **Latency Modeling:** Structural 4-cycle promotion latency pipeline.
-    *   **Synthetic Traffic Gen:** LFSR-based generator for burst misses and re-access patterns.
+*   **Fabric Hardening (`srmesh_router.sv`):**
+    *   **Dual Virtual Channels:** VC0 (Decode-Critical) and VC1 (Background/Promotion) with independent credit counters.
+    *   **Weighted Round Robin (WRR):** Arbitrates between VCs (VC0 weight=2, VC1 weight=1).
+    *   **Starvation Prevention:** Force-grant mechanism if a request waits > 16 cycles.
+    *   **One-Hop Latency:** Modeled as a 1-cycle pipeline stage per router hop.
+*   **Memory Bank Model (`hrm_region.sv`):**
+    *   **4-Bank Architecture:** Each HRM region is divided into 4 banks.
+    *   **Bank Contention:** Accesses are stalled if they conflict with active promotion/demotion tasks on the same bank.
+    *   **Conflict Tracking:** Hardware counters monitor bank-level pressure.
+*   **Latency Modeling:**
+    *   **Hit Latency:** 2 cycles.
+    *   **Miss Latency:** 6 cycles.
+    *   **Promotion Latency:** 4 cycles.
 
-### 9.2 Verification & SVA
+### 9.2 Verification Environment (`tb_top.sv`)
 
-The RTL includes **SystemVerilog Assertions (SVA)** to enforce hardware invariants:
-*   No FIFO overflow or credit underflow.
-*   No duplicate entries in the promotion pin table.
-*   No simultaneous promote/demote operations on the same region.
-*   Demote-only-when-full enforcement.
+The testbench now includes a **lightweight scoreboard** and rich performance reporting:
+*   **Self-Checking Scoreboard:** Tracks promoted pages in a reference model and validates hits against expected residency.
+*   **Mixed Traffic Patterns:** 60% random misses, 25% hot-page re-access, 10% burst bank-conflicts, and 5% thermal throttle events.
+*   **Automated Metrics:**
+    *   **Average Latency:** Weighted average of hit/miss costs.
+    *   **Hit/Miss Rates:** Statistical residency performance.
+    *   **Contention Metrics:** Total bank conflicts and router stalls.
 
-### 9.3 Simulation Instructions
+### 9.3 Build & Run Instructions
 
-The prototype is compatible with **Verilator** and **Yosys**.
+Scripts are provided in the `scripts/` directory for multiple toolchains:
 
-**Compilation (Verilator):**
-```bash
-verilator --cc rtl/ric.sv rtl/hrm_region.sv rtl/srmesh_router.sv rtl/srmic_top.sv \
-          --exe tb/tb_top.sv --top-module srmic_top --assert -Wno-fatal
-```
+*   **Verilator:** `./scripts/run_verilator.sh`
+*   **Icarus Verilog:** `./scripts/run_iverilog.sh`
+*   **Yosys (Synthesis Sanity):** `yosys scripts/run_yosys.ys`
 
-**Running the Testbench:**
-The testbench (`tb_top.sv`) runs for 20,000 cycles and prints a performance summary including:
-*   Total HRM Hits/Misses
-*   Aggregate Hit Rate
-*   Modeled Average Access Latency (Hit=2c, Miss=6c)
-
-### 9.4 Waveform Inspection
-Monitor these key signals in `srmic_hardened.vcd`:
-*   `dut.i_ric.state`: FSM arbitration state.
-*   `dut.i_ric.occupancy[3:0]`: Real-time region fill levels.
-*   `dut.i_ric.credit_counter`: Token bucket status.
+For detailed bring-up notes and signal lists, see:
+*   [RTL Bring-up Guide](docs/RTL_BRINGUP.md)
+*   [Synthesis Sanity Notes](docs/SYNTHESIS_NOTES.md)
 
 ---
 
