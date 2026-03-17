@@ -238,7 +238,7 @@ This repository includes a **fully synthesizable SystemVerilog RTL prototype** o
 | **Top Level** | `rtl/srmic_top.sv` | Structural integration of the controller, memory regions, and fabric. Includes synthetic traffic generation. |
 | **Testbench** | `tb/tb_top.sv` | System-level verification suite with a self-checking scoreboard and performance monitoring. |
 
-## 2. Build & Simulation
+## 2. Build & Verification Flow
 
 The project uses a standard `Makefile` for all hardware tasks. Artifacts are generated in the `build/` directory.
 
@@ -246,14 +246,23 @@ The project uses a standard `Makefile` for all hardware tasks. Artifacts are gen
 # Run Verilator simulation (Recommended)
 make sim
 
-# Run Icarus Verilog simulation
-make sim-iverilog
+# Run Formal Verification (SymbiYosys)
+make formal
+
+# Run Performance Parameter Sweep
+make perf-sweep
+
+# Run Multi-Chiplet Scaffold Simulation
+make sim-multichiplet
 
 # Run static analysis (Lint)
 make lint
 
-# Run synthesis sanity check (Yosys)
+# Run Synthesis Sanity Check (Yosys)
 make synth
+
+# Run FPGA Synthesis Scaffold (Vivado)
+make fpga-synth
 ```
 
 ## 3. Verification & Performance

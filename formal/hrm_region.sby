@@ -1,0 +1,15 @@
+[options]
+mode prove
+depth 32
+
+[engines]
+smtbmc boolector
+
+[script]
+read -formal hrm_region_formal.sv
+read -formal ../rtl/hrm_region.sv
+prep -top hrm_region_formal
+
+[files]
+hrm_region_formal.sv
+../rtl/hrm_region.sv

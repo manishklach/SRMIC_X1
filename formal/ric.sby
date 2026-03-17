@@ -1,0 +1,15 @@
+[options]
+mode prove
+depth 32
+
+[engines]
+smtbmc boolector
+
+[script]
+read -formal ric_formal.sv
+read -formal ../rtl/ric.sv
+prep -top ric_formal
+
+[files]
+ric_formal.sv
+../rtl/ric.sv

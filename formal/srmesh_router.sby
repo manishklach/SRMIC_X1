@@ -1,0 +1,15 @@
+[options]
+mode prove
+depth 16
+
+[engines]
+smtbmc boolector
+
+[script]
+read -formal srmesh_router_formal.sv
+read -formal ../rtl/srmesh_router.sv
+prep -top srmesh_router_formal
+
+[files]
+srmesh_router_formal.sv
+../rtl/srmesh_router.sv

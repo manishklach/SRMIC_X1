@@ -1,0 +1,34 @@
+name: SRMIC RTL CI Pipeline
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
+jobs:
+  build_and_verify:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Install Dependencies (Verilator, Icarus, Yosys, SymbiYosys)
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y verilator iverilog yosys
+        # Minimal SymbiYosys install
+        sudo apt-get install -y symbiyosys boolector
+
+    - name: Run Verilator Lint
+      run: make lint
+
+    - name: Run Simulation
+      run: make sim
+
+    - name: Run Synthesis Sanity
+      run: make synth
+
+    - name: Run Formal Verification
+      run: make formal
