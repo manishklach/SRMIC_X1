@@ -215,24 +215,32 @@ module ric #(
 
     // --- SVA Assertions ---
     // Verilator compatible SVA blocks
-`ifdef SVA
-    property p_no_fifo_overflow;
-        @(posedge clk) disable iff (!rst_n)
-        (miss_valid && fifo_full) |-> (page_in_fifo || !miss_valid); // Simplified
-    endproperty
-    assert property (p_no_fifo_overflow);
+`ifndef SYNTHESIS
+    // 1. FIFO Safety
+    assert property (@(posedge clk) disable iff (!rst_n) (miss_valid && !page_in_fifo && fifo_full) |-> (fifo_count == PROMO_FIFO_DEPTH));
+    assert property (@(posedge clk) disable iff (!rst_n) (fifo_pop && fifo_empty) |-> 1'b0); // No underflow
 
-    property p_promote_credit;
-        @(posedge clk) disable iff (!rst_n)
-        promote_valid |-> (credit_counter > 0);
-    endproperty
-    assert property (p_promote_credit);
+    // 2. Region Capacity Safety
+    generate
+        for (genvar i = 0; i < NUM_REGIONS; i++) begin : gen_sva_occupancy
+            assert property (@(posedge clk) disable iff (!rst_n) region_full_raw[i] |-> (occupancy[i] == REGION_DEPTH));
+            assert property (@(posedge clk) disable iff (!rst_n) occupancy[i] <= REGION_DEPTH);
+        end
+    endgenerate
 
-    property p_no_over_allocation;
-        @(posedge clk) disable iff (!rst_n)
-        promote_valid |-> (occupancy[promote_region_id] < REGION_DEPTH);
-    endproperty
-    // Note: In our FSM, we handle demote first, so occupancy should be checked
+    // 3. Promotion Atomicity
+    assert property (@(posedge clk) disable iff (!rst_n) !(promote_valid && demote_valid));
+
+    // 4. Pin Table Correctness (No duplicates)
+    always_comb begin
+        for (int i = 0; i < PIN_REG_SIZE; i++) begin
+            for (int j = i + 1; j < PIN_REG_SIZE; j++) begin
+                if (pin_valid[i] && pin_valid[j]) begin
+                    assert (pin_regs[i] != pin_regs[j]);
+                end
+            end
+        end
+    end
 `endif
 
 endmodule

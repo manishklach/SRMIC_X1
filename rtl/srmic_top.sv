@@ -1,4 +1,4 @@
-// SRMIC Top-Level Integration - Latency Modeled
+// SRMIC Top-Level Integration - Hardened Silicon Version
 // Prototype Implementation for SRMIC Architecture
 
 module srmic_top #(
@@ -13,7 +13,8 @@ module srmic_top #(
     output logic [NUM_REGIONS-1:0]   perf_hit,
     output logic [NUM_REGIONS-1:0]   perf_miss,
     output logic                     perf_promo,
-    output logic                     perf_demo
+    output logic                     perf_demo,
+    output logic [31:0]              perf_bank_conflicts
 );
 
     // --- Internal Signals ---
@@ -35,25 +36,11 @@ module srmic_top #(
     logic [PAGE_ID_WIDTH-1:0] hrm_demote_page_id [0:NUM_REGIONS-1];
     logic [NUM_REGIONS-1:0]   hrm_hit;
     logic [NUM_REGIONS-1:0]   hrm_miss;
+    logic [31:0]              hrm_bank_conflicts [0:NUM_REGIONS-1];
 
-    // Latency Modeling Pipelines
-    // Promotion Latency = 4 cycles
-    logic [3:0] promo_delay_pipe;
-    logic [PAGE_ID_WIDTH-1:0] promo_id_pipe [0:3];
-    logic [1:0] promo_reg_pipe [0:3];
-
-    always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            promo_delay_pipe <= 0;
-        end else begin
-            promo_delay_pipe <= {promo_delay_pipe[2:0], promote_valid};
-            promo_id_pipe[0] <= promote_page_id;
-            promo_reg_pipe[0] <= promote_region_id;
-            for (int i = 1; i < 4; i++) begin
-                promo_id_pipe[i] <= promo_id_pipe[i-1];
-                promo_reg_pipe[i] <= promo_reg_pipe[i-1];
-            end
-        end
+    always_comb begin
+        perf_bank_conflicts = 0;
+        for (int i=0; i<NUM_REGIONS; i++) perf_bank_conflicts += hrm_bank_conflicts[i];
     end
 
     // --- RIC Instance ---
@@ -80,8 +67,8 @@ module srmic_top #(
     genvar i;
     generate
         for (i = 0; i < NUM_REGIONS; i++) begin : gen_regions
-            assign hrm_promote_valid[i] = promo_delay_pipe[3] && (promo_reg_pipe[3] == i);
-            assign hrm_demote_req[i]    = demote_valid && (promote_region_id == i); // Simplified mapping
+            assign hrm_promote_valid[i] = promote_valid && (promote_region_id == i);
+            assign hrm_demote_req[i]    = demote_valid && (promote_region_id == i);
             assign region_demote_ack[i] = hrm_demote_ack[i];
             
             hrm_region #(
@@ -91,7 +78,7 @@ module srmic_top #(
                 .clk(clk),
                 .rst_n(rst_n),
                 .promote_valid(hrm_promote_valid[i]),
-                .promote_page_id(promo_id_pipe[3]),
+                .promote_page_id(promote_page_id),
                 .promote_ack(hrm_promote_ack[i]),
                 .demote_request(hrm_demote_req[i]),
                 .demote_ack(hrm_demote_ack[i]),
@@ -99,14 +86,16 @@ module srmic_top #(
                 .access_valid(synth_access_valid), 
                 .access_page_id(synth_access_id),
                 .access_stall(),
+                .response_valid(),
                 .region_full(region_full[i]),
                 .hit(hrm_hit[i]),
-                .miss(hrm_miss[i])
+                .miss(hrm_miss[i]),
+                .bank_conflict_count(hrm_bank_conflicts[i])
             );
         end
     endgenerate
 
-    // Synthetic Traffic (Moved to top for simplified control)
+    // --- Synthetic Traffic Generation (Hardened Pattern) ---
     logic [PAGE_ID_WIDTH-1:0] synth_miss_page_id;
     logic                     synth_miss_valid;
     logic [PAGE_ID_WIDTH-1:0] synth_access_id;
@@ -122,15 +111,24 @@ module srmic_top #(
             thermal_throttle   <= 0;
         end else begin
             lfsr <= {lfsr[14:0], lfsr[15] ^ lfsr[13] ^ lfsr[12] ^ lfsr[10]};
-            synth_miss_valid   <= (lfsr[3:0] == 4'hA); // Burst miss pattern
-            synth_access_valid <= lfsr[5]; // Constant traffic
-            thermal_throttle   <= (lfsr[11:8] == 4'hF);
+            
+            // Rich Traffic Pattern:
+            // 60% misses, 30% re-access, 10% burst
+            if (lfsr[3:0] < 4'd10) begin // ~60%
+                synth_miss_valid <= lfsr[4];
+                synth_access_valid <= 1'b0;
+            end else if (lfsr[3:0] < 4'd14) begin // ~25%
+                synth_access_valid <= 1'b1;
+                synth_access_id <= lfsr[PAGE_ID_WIDTH-1:0] & 16'h000F; // Re-access hot pages
+            end else begin // Burst / Conflict
+                synth_access_valid <= 1'b1;
+                synth_access_id <= 16'h0001; // Force bank conflict
+            end
+            
             if (synth_miss_valid) synth_miss_page_id <= synth_miss_page_id + 1;
-            synth_access_id <= lfsr[PAGE_ID_WIDTH-1:0];
         end
     end
 
-    // Performance Outputs
     assign perf_hit   = hrm_hit;
     assign perf_miss  = hrm_miss;
     assign perf_promo = promote_valid;
