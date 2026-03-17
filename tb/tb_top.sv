@@ -55,6 +55,10 @@ module tb_top;
     logic                            dbg_synth_access_valid;
     logic [PAGE_ID_WIDTH-1:0]        dbg_synth_access_id;
 
+    // New: committed page per region (from srmic_top debug port)
+    logic [PAGE_ID_WIDTH-1:0]        dbg_promote_committed_page [0:NUM_REGIONS-1];
+    logic [$clog2(NUM_REGIONS)-1:0]  promote_target_region_wire;
+
     logic [NUM_REGIONS-1:0] hrm_promote_ack_internal;
     generate
         for (genvar r=0; r<NUM_REGIONS; r++) begin : gen_promo_ack
@@ -107,7 +111,9 @@ module tb_top;
         .dbg_last_promoted_page(dbg_last_promoted_page),
         .dbg_last_demoted_page(dbg_last_demoted_page),
         .dbg_synth_access_valid(dbg_synth_access_valid),
-        .dbg_synth_access_id(dbg_synth_access_id)
+        .dbg_synth_access_id(dbg_synth_access_id),
+        .dbg_promote_committed_page(dbg_promote_committed_page),
+        .promote_target_region(promote_target_region_wire)
     );
 
     task dump_sb_for_page(logic [PAGE_ID_WIDTH-1:0] page_id);
@@ -209,7 +215,7 @@ module tb_top;
             for (int r=0; r<NUM_REGIONS; r++) begin
                 if (hrm_promote_ack_internal[r]) begin
                     automatic logic [PAGE_ID_WIDTH-1:0] committed_page =
-                        dut.gen_regions[r].i_hrm.promote_page_id_pipe[3];
+                        dbg_promote_committed_page[r];
                     automatic logic found_it = 1'b0;
                     for (int i=0; i<SCOREBOARD_SIZE; i++) begin
                         if (sb_state[i] == PROMOTION_PENDING &&
@@ -254,7 +260,7 @@ module tb_top;
                 if (found==-1) found = total_promos % SCOREBOARD_SIZE;
                 sb_state[found]          = PROMOTION_PENDING;
                 sb_resident_pages[found] = dut.promote_page_id;
-                sb_region[found]         = dut.promote_region_id; // FIX
+                sb_region[found]         = promote_target_region_wire;
                 sb_timer[found]          = 4;
                 if (DEBUG_VERBOSE && dut.promote_page_id==DEBUG_PAGE)
                     $display("[%0d] TRACE page=0x%h event=PROMOTION_ISSUED region=%0d",
@@ -268,7 +274,7 @@ module tb_top;
                 for (int i=0; i<SCOREBOARD_SIZE; i++) begin
                     if (sb_state[i]==RESIDENT &&
                         sb_resident_pages[i]==dut.demote_page_id &&
-                        sb_region[i]==dut.promote_region_id) begin
+                        sb_region[i]==promote_target_region_wire) begin
                         sb_state[i] = DEMOTION_PENDING;
                         sb_timer[i] = 1;
                         break;

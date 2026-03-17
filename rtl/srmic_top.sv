@@ -55,7 +55,9 @@ module srmic_top #(
     output logic                            dbg_synth_access_valid,
     output logic [PAGE_ID_WIDTH-1:0]        dbg_synth_access_id,
 
-    // Expose promotion target region for testbench
+    // Promotion commit observability — page committed at promote_ack per region
+    output logic [PAGE_ID_WIDTH-1:0]        dbg_promote_committed_page [0:NUM_REGIONS-1],
+    // Expose promote_region_id for scoreboard region tracking
     output logic [$clog2(NUM_REGIONS)-1:0]  promote_target_region
 );
 
@@ -95,8 +97,9 @@ module srmic_top #(
     logic [15:0]                            lfsr;
 
     // Traffic Visibility assignments
-    assign dbg_synth_access_valid = synth_access_valid;
-    assign dbg_synth_access_id    = synth_access_id;
+    assign dbg_synth_access_valid  = synth_access_valid;
+    assign dbg_synth_access_id     = synth_access_id;
+    assign promote_target_region   = promote_region_id;
 
     // ==================================================
     // Combinational Logic
@@ -205,6 +208,13 @@ module srmic_top #(
 
     assign region_demote_ack = hrm_demote_ack;
 
+    // Wire committed page per region from HRM pipeline
+    generate
+        for (genvar i = 0; i < NUM_REGIONS; i++) begin : gen_committed_page
+            assign dbg_promote_committed_page[i] = gen_regions[i].i_hrm.promote_page_id_pipe[3];
+        end
+    endgenerate
+
     // Mesh Router
     srmesh_router i_router (
         .clk(clk),
@@ -226,7 +236,5 @@ module srmic_top #(
     assign perf_miss  = hrm_miss;
     assign perf_promo = promote_valid;
     assign perf_demo  = demote_valid;
-
-    assign promote_target_region = promote_region_id;
 
 endmodule
