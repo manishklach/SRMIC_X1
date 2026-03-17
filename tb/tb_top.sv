@@ -17,7 +17,7 @@ module tb_top;
     localparam PAGE_ID_WIDTH   = 16;
     localparam SCOREBOARD_SIZE = 256;
     localparam RUN_CYCLES      = 20000;
-    localparam FIFO_DEPTH      = 16;
+    localparam FIFO_DEPTH      = 32; // Increased to handle stalls
 
     // ==================================================
     // Ports / Signals
@@ -59,14 +59,16 @@ module tb_top;
     logic [PAGE_ID_WIDTH-1:0] sb_resident_pages [0:SCOREBOARD_SIZE-1];
     int sb_timer [0:SCOREBOARD_SIZE-1];
     
-    // --- Scoreboard Response FIFO ---
+    // --- Scoreboard Response FIFOs (Per Region) ---
     typedef struct packed {
         logic [PAGE_ID_WIDTH-1:0] page_id;
         logic                     expected_hit;
     } sb_req_t;
 
-    sb_req_t sb_fifo [0:FIFO_DEPTH-1];
-    int sb_fifo_wr_ptr, sb_fifo_rd_ptr, sb_fifo_count;
+    sb_req_t sb_fifo [0:NUM_REGIONS-1][0:FIFO_DEPTH-1];
+    int sb_fifo_wr_ptr [0:NUM_REGIONS-1];
+    int sb_fifo_rd_ptr [0:NUM_REGIONS-1];
+    int sb_fifo_count  [0:NUM_REGIONS-1];
 
     // ==================================================
     // DUT Instantiation
@@ -96,9 +98,11 @@ module tb_top;
     always_ff @(posedge clk) begin
         if (!rst_n) begin
             scoreboard_errors <= 0;
-            sb_fifo_wr_ptr    <= 0;
-            sb_fifo_rd_ptr    <= 0;
-            sb_fifo_count     <= 0;
+            for (int r=0; r<NUM_REGIONS; r++) begin
+                sb_fifo_wr_ptr[r]    <= 0;
+                sb_fifo_rd_ptr[r]    <= 0;
+                sb_fifo_count[r]     <= 0;
+            end
             for (int i=0; i<SCOREBOARD_SIZE; i++) begin
                 sb_state[i]          <= NOT_RESIDENT;
                 sb_resident_pages[i] <= 0;
@@ -106,25 +110,28 @@ module tb_top;
             end
         end else begin
             // 1. Prediction at time of access issue (T0)
-            if (dut.synth_access_valid && !(|dut.gen_regions[0].i_hrm.access_stall)) begin
+            // Note: Access is broadcast to all regions, but each can stall independently
+            if (dut.synth_access_valid) begin
                 automatic logic current_hit = 1'b0;
                 for (int i=0; i<SCOREBOARD_SIZE; i++) begin
-                    // A page is considered resident if it is already RESIDENT, 
-                    // or if its promotion is completing in the current cycle.
                     if ((sb_state[i] == RESIDENT || (sb_state[i] == PROMOTION_PENDING && sb_timer[i] == 1)) && 
                         (sb_resident_pages[i] == dut.synth_access_id)) begin
                         current_hit = 1'b1;
                     end
                 end
 
-                if (sb_fifo_count < FIFO_DEPTH) begin
-                    sb_fifo[sb_fifo_wr_ptr].page_id      <= dut.synth_access_id;
-                    sb_fifo[sb_fifo_wr_ptr].expected_hit <= current_hit;
-                    sb_fifo_wr_ptr <= (sb_fifo_wr_ptr + 1) % FIFO_DEPTH;
-                    sb_fifo_count  <= sb_fifo_count + 1;
-                end else begin
-                    $error("[%0t] SB_FIFO_OVERFLOW: Increase FIFO_DEPTH", $time);
-                    scoreboard_errors++;
+                for (int r=0; r<NUM_REGIONS; r++) begin
+                    if (!dut.gen_regions[r].i_hrm.access_stall) begin
+                        if (sb_fifo_count[r] < FIFO_DEPTH) begin
+                            sb_fifo[r][sb_fifo_wr_ptr[r]].page_id      <= dut.synth_access_id;
+                            sb_fifo[r][sb_fifo_wr_ptr[r]].expected_hit <= current_hit;
+                            sb_fifo_wr_ptr[r] <= (sb_fifo_wr_ptr[r] + 1) % FIFO_DEPTH;
+                            sb_fifo_count[r]  <= sb_fifo_count[r] + 1;
+                        end else begin
+                            $error("[%0t] SB_FIFO_OVERFLOW (Region %0d): Increase FIFO_DEPTH", $time, r);
+                            scoreboard_errors++;
+                        end
+                    end
                 end
             end
 
@@ -166,26 +173,27 @@ module tb_top;
                 end
             end
             
-            // 5. Validate at Response Time
-            // Wait for response_valid from any region (they are synced in this simple model)
-            if (|dut.gen_regions[0].i_hrm.response_valid) begin
-                if (sb_fifo_count > 0) begin
-                    automatic sb_req_t req = sb_fifo[sb_fifo_rd_ptr];
-                    automatic logic actual_hit = |perf_hit;
-                    
-                    if (actual_hit != req.expected_hit) begin
-                        $error("[%0t] SB_MISMATCH: Page 0x%h, Expected %s, Got %s", 
-                               $time, req.page_id, 
-                               req.expected_hit ? "HIT" : "MISS",
-                               actual_hit ? "HIT" : "MISS");
+            // 5. Validate at Response Time (Per Region)
+            for (int r=0; r<NUM_REGIONS; r++) begin
+                if (dut.gen_regions[r].i_hrm.response_valid) begin
+                    if (sb_fifo_count[r] > 0) begin
+                        automatic sb_req_t req = sb_fifo[r][sb_fifo_rd_ptr[r]];
+                        automatic logic actual_hit = perf_hit[r];
+                        
+                        if (actual_hit != req.expected_hit) begin
+                            $error("[%0t] SB_MISMATCH (Region %0d): Page 0x%h, Expected %s, Got %s", 
+                                   $time, r, req.page_id, 
+                                   req.expected_hit ? "HIT" : "MISS",
+                                   actual_hit ? "HIT" : "MISS");
+                            scoreboard_errors++;
+                        end
+                        
+                        sb_fifo_rd_ptr[r] <= (sb_fifo_rd_ptr[r] + 1) % FIFO_DEPTH;
+                        sb_fifo_count[r]  <= sb_fifo_count[r] - 1;
+                    end else begin
+                        $error("[%0t] SB_UNEXPECTED_RESPONSE (Region %0d): No pending request in FIFO", $time, r);
                         scoreboard_errors++;
                     end
-                    
-                    sb_fifo_rd_ptr <= (sb_fifo_rd_ptr + 1) % FIFO_DEPTH;
-                    sb_fifo_count  <= sb_fifo_count - 1;
-                end else begin
-                    $error("[%0t] SB_UNEXPECTED_RESPONSE: No pending request in FIFO", $time);
-                    scoreboard_errors++;
                 end
             end
         end
