@@ -1,28 +1,33 @@
-# SRMIC Synthesis Report
+# ============================================================================
+// SRMIC Synthesis Report Template
+# ============================================================================
 
-**Date:** YYYY-MM-DD
-**Top Module:** srmic_top
+This document outlines the expected resource utilization and synthesis flow 
+for the SRMIC-X1 prototype.
 
-## 1. Overview
-This report captures the synthesis sanity checks performed on the SRMIC RTL prototype using Yosys.
+### 1. Synthesis Flow (Yosys)
+```bash
+make synth
+```
+The flow performs a generic techmap to standard cells to estimate area and 
+gate count.
 
-## 2. Resource Statistics
-| Resource Type | Count | Notes |
+### 2. Key Metrics to Record
+| Metric | Expected Range | Description |
 |---|---|---|
-| Total Cells | [insert] | Excludes memory macros |
-| Estimated Area Proxy | [insert] | Generic techmap logic elements |
-| Flip-flops (DFFs) | [insert] | Total sequential state |
+| Total Cells | 5,000 - 8,000 | Total combinational + sequential logic |
+| Flip-flops (DFF) | 1,200 - 1,800 | Sequential state elements |
+| Memory (Inferred) | 4 regions x 64 entries | Tag RAM and LRU storage |
 
-## 3. Memory Inference
-| Memory Structure | Size | Inferred Type |
-|---|---|---|
-| Promotion FIFO | 16 entries | [insert] |
-| HRM Tag Array | 64 entries x 4 regions | [insert] |
+### 3. Critical Warnings
+Review the synthesis log for the following:
+* **Latch Inference:** Always-comb blocks must be complete. No latches are 
+  permitted in the SRMIC microarchitecture.
+* **Unconnected Ports:** Debug observability ports (`dbg_*`) may be optimized 
+  away if not tied to a top-level sink.
+* **Multi-driven Nets:** Ensure no bus contention in the `srmesh` logic.
 
-## 4. Warnings and Exceptions
-* **[Warning 1]**: (Explanation of why this warning is acceptable, e.g., unused debug ports).
-* **[Warning 2]**: ...
-
-## 5. Prototype Limitations
-* SRAM Macros: The `hrm_region` tag array and valid bits are currently inferred as registers. In a production ASIC flow, these must be mapped to high-density SRAM macros via a technology-specific wrapper.
-* Mesh Scalability: The current top-level instantiates a small mesh segment. Scaling to the full 32+ region architecture will require hierarchical synthesis partitioning.
+### 4. Area Proxies
+The synthesis netlist (`build/srmic_synth.v`) should be reviewed for gate 
+density in the `hrm_region` tag matching logic, which is the most 
+area-sensitive component of the residency controller.

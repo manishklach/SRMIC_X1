@@ -6,10 +6,8 @@
 set -e
 
 echo "Running Verilator Lint..."
+verilator --lint-only -Wall -Wno-fatal \
+    rtl/ric.sv rtl/hrm_region.sv rtl/srmesh_router.sv rtl/srmic_top.sv \
+    tb/tb_top.sv
 
-# Run Verilator in lint-only mode.
-# We treat warnings as errors to enforce clean RTL.
-# We disable the warning about fatal errors to let it exit non-zero naturally.
-verilator --lint-only -Wall -Wno-fatal ../rtl/*.sv ../tb/*.sv
-
-echo "Lint Passed Cleanly."
+echo "Lint passed cleanly."

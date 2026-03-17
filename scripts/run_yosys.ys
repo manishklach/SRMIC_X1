@@ -1,21 +1,19 @@
-# ============================================================================
 # Yosys Synthesis Script for SRMIC-X1 Sanity Check
-# ============================================================================
 
-# 1. Read RTL modules explicitly
-read_verilog -sv ../rtl/ric.sv
-read_verilog -sv ../rtl/hrm_region.sv
-read_verilog -sv ../rtl/srmesh_router.sv
-read_verilog -sv ../rtl/srmic_top.sv
+# 1. Read RTL modules
+read_verilog -sv rtl/ric.sv
+read_verilog -sv rtl/hrm_region.sv
+read_verilog -sv rtl/srmesh_router.sv
+read_verilog -sv rtl/srmic_top.sv
 
 # 2. Hierarchy Check
 hierarchy -check -top srmic_top
 
-# 3. Optimization and Generic Mapping (Synth)
+# 3. Perform Synthesis
 synth -top srmic_top
 
 # 4. Resource Statistics
 stat
 
-# 5. Write Netlist (to build directory)
-write_verilog -noattr srmic_synth.v
+# 5. Write Netlist
+write_verilog build/srmic_synth.v

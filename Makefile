@@ -1,55 +1,54 @@
 # ============================================================================
-# SRMIC-X1 Bring-up Makefile
+# Makefile for SRMIC-X1 RTL Bring-up
 # ============================================================================
 
-.PHONY: all sim sim-iverilog synth lint clean
+# --- Parameters ---
+TOP_MODULE = srmic_top
+RTL_SRC    = rtl/ric.sv rtl/hrm_region.sv rtl/srmesh_router.sv rtl/srmic_top.sv
+TB_SRC     = tb/tb_top.sv
+BUILD_DIR  = build
+OBJ_DIR    = $(BUILD_DIR)/obj_dir
+SEED       = 1234
 
-# Default target
+# --- Tools ---
+VERILATOR  = verilator
+IVERILOG   = iverilog
+VVP        = vvp
+YOSYS      = yosys
+
+.PHONY: all sim sim-iverilog lint synth clean
+
 all: lint sim
 
-# Build directories
-BUILD_DIR = build
-OBJ_DIR = $(BUILD_DIR)/obj_dir
-
-# Verilator configuration
-VERILATOR_FLAGS = --cc --trace --assert -Wall -Wno-fatal -Mdir $(OBJ_DIR)
-
-# RTL and TB sources
-RTL_SRC = rtl/ric.sv rtl/hrm_region.sv rtl/srmesh_router.sv rtl/srmic_top.sv
-TB_SRC = tb/tb_top.sv
-TOP_MODULE = srmic_top
-
-# Run simulation with Verilator
+# --- Verilator Simulation ---
 sim: $(BUILD_DIR)
-	@echo "--- [VERILATOR] Compiling ---"
-	verilator $(VERILATOR_FLAGS) $(RTL_SRC) --exe ../$(TB_SRC) --top-module $(TOP_MODULE)
-	@echo "--- [VERILATOR] Building executable ---"
+	@echo "--- [VERILATOR] Compiling and Building ---"
+	$(VERILATOR) --cc --trace --assert -Wall -Wno-fatal -Mdir $(OBJ_DIR) $(RTL_SRC) --exe ../$(TB_SRC) --top-module $(TOP_MODULE)
 	make -C $(OBJ_DIR) -j -f V$(TOP_MODULE).mk V$(TOP_MODULE)
-	@echo "--- [VERILATOR] Running simulation ---"
-	cd $(BUILD_DIR) && ./obj_dir/V$(TOP_MODULE) +seed=1234
+	@echo "--- [VERILATOR] Running Simulation ---"
+	cd $(BUILD_DIR) && ./obj_dir/V$(TOP_MODULE) +seed=$(SEED)
 
-# Run simulation with Icarus Verilog
+# --- Icarus Verilog Simulation ---
 sim-iverilog: $(BUILD_DIR)
 	@echo "--- [IVERILOG] Compiling ---"
-	iverilog -g2012 -o $(BUILD_DIR)/srmic_sim.vvp $(RTL_SRC) $(TB_SRC)
-	@echo "--- [IVERILOG] Running simulation ---"
-	cd $(BUILD_DIR) && vvp srmic_sim.vvp +seed=1234
+	$(IVERILOG) -g2012 -o $(BUILD_DIR)/srmic_sim.vvp $(RTL_SRC) $(TB_SRC)
+	@echo "--- [IVERILOG] Running Simulation ---"
+	cd $(BUILD_DIR) && $(VVP) srmic_sim.vvp +seed=$(SEED)
 
-# Run Yosys Synthesis
-synth: $(BUILD_DIR)
-	@echo "--- [YOSYS] Running synthesis sanity check ---"
-	cd $(BUILD_DIR) && yosys ../scripts/run_yosys.ys
-
-# Run Lint script
+# --- Linting ---
 lint:
-	@echo "--- [LINT] Running Verilator lint ---"
+	@echo "--- [LINT] Running Verilator Lint ---"
 	./scripts/lint.sh
 
-# Ensure build directory exists
+# --- Synthesis ---
+synth: $(BUILD_DIR)
+	@echo "--- [YOSYS] Running Synthesis Sanity Check ---"
+	$(YOSYS) scripts/run_yosys.ys
+
+# --- Setup & Cleanup ---
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
-# Clean build artifacts
 clean:
-	@echo "--- Cleaning build directory ---"
-	rm -rf $(BUILD_DIR)/*
+	@echo "--- Cleaning Build Artifacts ---"
+	rm -rf $(BUILD_DIR)

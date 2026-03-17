@@ -1,37 +1,47 @@
-# SRMIC-X1 RTL Bring-up Guide
+# ============================================================================
+# SRMIC-X1 RTL Bring-up Documentation
+# ============================================================================
 
-## 1. Module List
-| Module | File | Description |
-|---|---|---|
-| `ric` | `rtl/ric.sv` | Residency Intelligence Controller (Promotion/Demotion Engine) |
-| `hrm_region` | `rtl/hrm_region.sv` | Hot Residency Memory (Tag RAM, LRU, Bank Model) |
-| `srmesh_router` | `rtl/srmesh_router.sv` | 4-Port Mesh Router (Dual VC, WRR, Starvation Prevention) |
-| `srmic_top` | `rtl/srmic_top.sv` | Top-level integration & synthetic traffic generator |
-| `tb_top` | `tb/tb_top.sv` | Simulation testbench with scoreboard & perf metrics |
+This document provides technical instructions for simulating and reviewing 
+the SRMIC-X1 RTL prototype.
 
-## 2. Compile & Run Commands
-### Verilator
+### 1. Repository Structure
+*   `rtl/`: Synthesizable SystemVerilog source files.
+*   `tb/`: System-level testbench and scoreboard.
+*   `scripts/`: Build, lint, and synthesis automation scripts.
+*   `docs/`: Hardware specifications and architectural invariants.
+*   `build/`: (Generated) Simulation artifacts and synthesis logs.
+
+### 2. Simulation Quickstart
+The project uses a standard Makefile flow.
+
 ```bash
-./scripts/run_verilator.sh
+# Verilator (Recommended for speed and SVA)
+make sim
+
+# Icarus Verilog (Fallback)
+make sim-iverilog
 ```
-### Icarus Verilog
-```bash
-./scripts/run_iverilog.sh
-```
 
-## 3. Waveform Analysis (Signals to Inspect)
-Inspect `srmic_bringup.vcd` for the following key signals:
-* `dut.dbg_ric_state`: Verify FSM transitions for promotion/demotion.
-* `dut.gen_regions[0].i_hrm.bank_conflict_count`: Monitor memory bank contention.
-* `dut.i_router.dbg_grant_port`: Observe router arbitration (VC0/VC1).
-* `dut.i_router.dbg_stall_cycles`: Track fabric backpressure.
+### 3. Waveform Analysis
+After simulation, open `build/srmic_trace.vcd` in GTKWave or Surfer.
 
-## 4. Performance Counters
-* **Bank Conflicts:** Occurs when a compute access hits the same bank as an active promotion/demotion.
-* **Router Stalls:** Total cycles a flit was buffered in the router due to credit unavailability or arbitration loss.
-* **Avg Latency:** Weighted average of hit (2c) and miss (6c) access times.
+**Critical Signals to Monitor:**
+*   `dut.dbg_ric_state`: FSM arbitration flow.
+*   `dut.i_ric.occupancy[3:0]`: Real-time region fill levels.
+*   `dut.gen_regions[0].i_hrm.bank_conflict_count`: Monitor memory contention.
+*   `dut.i_router.starvation_cnt`: Fabric fairness watchdog status.
 
-## 5. Known Prototype Limitations
-* **Mesh Interconnect:** The top-level currently instantiates a single router; full 2x2 mesh topology is modeled but not fully interconnected in this bring-up version.
-* **Scoreboard:** Uses a simple wrap-around reference model (256 entries); not exhaustive for the full address space.
-* **Memory Macros:** Uses synthesizable `reg` arrays; must be replaced by SRAM macros for real ASIC synthesis.
+### 4. Metrics & Performance
+The simulation generates `build/sim_results.log` with the following:
+*   **Cycles:** Total simulation duration.
+*   **Hit Rate:** Percentage of tokens served from hot SRAM.
+*   **Avg Latency:** Weighted access cost (target < 5.0 cycles).
+*   **Status:** PASS/FAIL based on scoreboard validation.
+
+### 5. Prototype Limitations
+*   **Top-level Interconnect:** The current `srmic_top` instantiates a single 
+    router instance for verification sanity; the full 32-node mesh is 
+    described in the architecture whitepaper.
+*   **SRAM Models:** Memory is inferred as registers. Physical macro mapping 
+    is required for GDSII generation.

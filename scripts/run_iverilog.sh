@@ -1,22 +1,15 @@
 #!/bin/bash
-# Icarus Verilog Run Script for SRMIC-X1 Bring-up
+# ============================================================================
+# SRMIC-X1 Icarus Verilog Simulation Script
+# ============================================================================
 
 set -e
 
-TOP_MODULE="srmic_top"
-RTL_DIR="../rtl"
-TB_DIR="../tb"
-OUT_FILE="srmic_sim.vvp"
+mkdir -p build
+echo "Compiling with Icarus..."
+iverilog -g2012 -o build/srmic_sim.vvp \
+    rtl/ric.sv rtl/hrm_region.sv rtl/srmesh_router.sv rtl/srmic_top.sv \
+    tb/tb_top.sv
 
-echo "[1/2] Compiling RTL and Testbench..."
-iverilog -g2012 -o ${OUT_FILE} \
-    ${RTL_DIR}/ric.sv \
-    ${RTL_DIR}/hrm_region.sv \
-    ${RTL_DIR}/srmesh_router.sv \
-    ${RTL_DIR}/srmic_top.sv \
-    ${TB_DIR}/tb_top.sv
-
-echo "[2/2] Running Simulation..."
-vvp ${OUT_FILE}
-
-echo "Simulation complete. VCD generated: srmic_bringup.vcd"
+echo "Running simulation..."
+vvp build/srmic_sim.vvp +seed=1234

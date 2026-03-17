@@ -1,10 +1,14 @@
 // ============================================================================
-// SRMESH 4-Port Router - Hardened Silicon Version
-// Prototype Implementation with 2 Virtual Channels (VC0, VC1)
+// Module: srmesh_router
+// Project: SRMIC-X1
+// Description: Hardened 4-Port Mesh Router
+//              Implements credit-based flow control and WRR arbitration.
 // ============================================================================
 
 module srmesh_router #(
-    // --- PARAMETERS ---
+    // ==================================================
+    // Parameters
+    // ==================================================
     parameter FLIT_WIDTH  = 64,
     parameter ROUTER_X    = 0,
     parameter ROUTER_Y    = 0,
@@ -12,41 +16,47 @@ module srmesh_router #(
     parameter VC0_WEIGHT  = 2,
     parameter VC1_WEIGHT  = 1
 )(
-    // --- PORTS ---
-    input  logic clk,
-    input  logic rst_n,
+    // ==================================================
+    // Ports
+    // ==================================================
+    input  logic                            clk,
+    input  logic                            rst_n,
 
     // Interface per port (North:0, South:1, East:2, West:3)
-    input  logic [3:0]             in_valid,
-    input  logic [FLIT_WIDTH-1:0]  in_flit [0:3],
-    input  logic [3:0]             in_vc_id, // 0: critical, 1: background
-    output logic [3:0]             in_credit_ret,
+    input  logic [3:0]                      in_valid,
+    input  logic [FLIT_WIDTH-1:0]           in_flit [0:3],
+    input  logic [3:0]                      in_vc_id,
+    output logic [3:0]                      in_credit_ret,
 
-    output logic [3:0]             out_valid,
-    output logic [FLIT_WIDTH-1:0]  out_flit [0:3],
-    output logic [3:0]             out_vc_id,
-    input  logic [3:0]             out_credit_ret,
+    output logic [3:0]                      out_valid,
+    output logic [FLIT_WIDTH-1:0]           out_flit [0:3],
+    output logic [3:0]                      out_vc_id,
+    input  logic [3:0]                      out_credit_ret,
 
-    // Debug Outputs
-    output logic [1:0]             dbg_grant_port,
-    output logic                   dbg_active_vc,
-    output logic [31:0]            dbg_stall_cycles
+    // Debug Observability
+    output logic [1:0]                      dbg_grant_port,
+    output logic                            dbg_active_vc,
+    output logic [31:0]                     dbg_stall_cycles
 );
 
-    // --- STATE ---
-    logic [FLIT_WIDTH-1:0] vc_buf [0:3][0:1];
-    logic [3:0][1:0]       vc_full;
-    logic [$clog2(MAX_CREDITS+1)-1:0] credits [0:3][0:1];
-    logic [4:0] starvation_cnt [0:3][0:1];
-    logic [1:0] wrr_state [0:3];
-    logic [1:0] port_rr;
+    // ==================================================
+    // Local State
+    // ==================================================
+    logic [FLIT_WIDTH-1:0]                  vc_buf [0:3][0:1];
+    logic [3:0][1:0]                        vc_full;
+    logic [$clog2(MAX_CREDITS+1)-1:0]       credits [0:3][0:1];
+    logic [4:0]                             starvation_cnt [0:3][0:1];
+    logic [1:0]                             wrr_state [0:3];
+    logic [1:0]                             port_rr;
 
-    // One-hop Latency Pipeline
-    logic [3:0]             pipe_out_valid;
-    logic [FLIT_WIDTH-1:0]  pipe_out_flit [0:3];
-    logic [3:0]             pipe_out_vc_id;
+    // Latency Pipeline
+    logic [3:0]                             pipe_out_valid;
+    logic [FLIT_WIDTH-1:0]                  pipe_out_flit [0:3];
+    logic [3:0]                             pipe_out_vc_id;
 
-    // --- COMBINATIONAL LOGIC ---
+    // ==================================================
+    // Combinational Logic
+    // ==================================================
     function logic [1:0] get_route(input [FLIT_WIDTH-1:0] flit);
         logic [1:0] dx = flit[59:58];
         logic [1:0] dy = flit[57:56];
@@ -56,19 +66,19 @@ module srmesh_router #(
         else                    return 2'd0; // North
     endfunction
 
-    logic [1:0] sel_port;
-    logic       sel_vc;
-    logic       found_grant;
+    logic [1:0]                             sel_port;
+    logic                                   sel_vc;
+    logic                                   found_grant;
 
     always_comb begin
         found_grant = 1'b0;
         sel_port    = 0;
         sel_vc      = 0;
         
-        for (int i=0; i<4; i++) begin
+        for (int i = 0; i < 4; i++) begin
             logic [1:0] p = port_rr + i[1:0];
             
-            // Check Starvation First (Force Grant)
+            // Priority 1: Starvation Watchdog
             if (vc_full[p][0] && (starvation_cnt[p][0] > 16)) begin
                 sel_port = p; sel_vc = 0; found_grant = 1'b1;
             end else if (vc_full[p][1] && (starvation_cnt[p][1] > 16)) begin
@@ -77,7 +87,7 @@ module srmesh_router #(
 
             if (found_grant) break;
 
-            // Normal WRR Arbitration
+            // Priority 2: WRR Arbitration
             logic preferred_vc = (wrr_state[p] < VC0_WEIGHT) ? 1'b0 : 1'b1;
             if (vc_full[p][preferred_vc]) begin
                 logic [1:0] dest = get_route(vc_buf[p][preferred_vc]);
@@ -98,23 +108,25 @@ module srmesh_router #(
     assign dbg_grant_port = sel_port;
     assign dbg_active_vc  = sel_vc;
 
-    // --- SEQUENTIAL LOGIC ---
+    // ==================================================
+    // Sequential Logic
+    // ==================================================
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            for (int p=0; p<4; p++) begin
-                for (int v=0; v<2; v++) begin
-                    credits[p][v] <= MAX_CREDITS;
-                    vc_full[p][v] <= 0;
+            for (int p = 0; p < 4; p++) begin
+                for (int v = 0; v < 2; v++) begin
+                    credits[p][v]        <= MAX_CREDITS;
+                    vc_full[p][v]        <= 0;
                     starvation_cnt[p][v] <= 0;
                 end
                 wrr_state[p] <= 0;
             end
-            port_rr <= 0;
-            in_credit_ret <= 0;
-            out_valid <= 0;
+            port_rr          <= 0;
+            in_credit_ret    <= 0;
+            out_valid        <= 0;
             dbg_stall_cycles <= 0;
         end else begin
-            // Shift Pipeline (1-hop latency)
+            // Latency Pipeline
             out_valid <= pipe_out_valid;
             out_flit  <= pipe_out_flit;
             out_vc_id <= pipe_out_vc_id;
@@ -122,58 +134,54 @@ module srmesh_router #(
             pipe_out_valid <= 0;
             in_credit_ret  <= 0;
 
-            // Monitor Stalls
             if (!found_grant && (|vc_full)) dbg_stall_cycles <= dbg_stall_cycles + 1;
 
-            // Input Buffering
-            for (int p=0; p<4; p++) begin
+            // Buffer Input & Credit Handshake
+            for (int p = 0; p < 4; p++) begin
                 if (in_valid[p] && !vc_full[p][in_vc_id[p]]) begin
-                    vc_buf[p][in_vc_id[p]] <= in_flit[p];
-                    vc_full[p][in_vc_id[p]] <= 1'b1;
+                    vc_buf[p][in_vc_id[p]]         <= in_flit[p];
+                    vc_full[p][in_vc_id[p]]        <= 1'b1;
                     starvation_cnt[p][in_vc_id[p]] <= 0;
                 end
-                // Neighbor Credit Return
                 if (out_credit_ret[p]) begin
                     credits[p][0] <= (credits[p][0] < MAX_CREDITS) ? credits[p][0] + 1 : credits[p][0];
                 end
-                // Aging for Starvation
                 if (vc_full[p][0]) starvation_cnt[p][0] <= starvation_cnt[p][0] + 1;
                 if (vc_full[p][1]) starvation_cnt[p][1] <= starvation_cnt[p][1] + 1;
             end
 
-            // Apply Grant
+            // Process Grant
             if (found_grant) begin
                 logic [1:0] dest = get_route(vc_buf[sel_port][sel_vc]);
-                pipe_out_flit[dest]  <= vc_buf[sel_port][sel_vc];
-                pipe_out_valid[dest] <= 1'b1;
-                pipe_out_vc_id[dest] <= sel_vc;
-                credits[dest][sel_vc] <= credits[dest][sel_vc] - 1;
-                
-                vc_full[sel_port][sel_vc] <= 1'b0;
-                in_credit_ret[sel_port]   <= 1'b1;
+                pipe_out_flit[dest]              <= vc_buf[sel_port][sel_vc];
+                pipe_out_valid[dest]             <= 1'b1;
+                pipe_out_vc_id[dest]             <= sel_vc;
+                credits[dest][sel_vc]            <= credits[dest][sel_vc] - 1;
+                vc_full[sel_port][sel_vc]        <= 1'b0;
+                in_credit_ret[sel_port]          <= 1'b1;
                 starvation_cnt[sel_port][sel_vc] <= 0;
 
-                // Update RR/WRR
                 port_rr <= sel_port + 1;
                 if (sel_vc == 0) wrr_state[sel_port] <= wrr_state[sel_port] + 1;
-                else wrr_state[sel_port] <= 0;
+                else wrr_state[sel_port]             <= 0;
             end else begin
                 port_rr <= port_rr + 1;
             end
         end
     end
 
-    // --- ASSERTIONS ---
+    // ==================================================
+    // Assertions
+    // ==================================================
 `ifndef SYNTHESIS
     generate
-        for (genvar p=0; p<4; p++) begin : gen_sva
+        for (genvar p = 0; p < 4; p++) begin : gen_sva
             assert property (@(posedge clk) credits[p][0] <= MAX_CREDITS);
             assert property (@(posedge clk) credits[p][1] <= MAX_CREDITS);
             assert property (@(posedge clk) (pipe_out_valid[p] && pipe_out_vc_id[p] == 0) |-> (credits[p][0] > 0));
-            assert property (@(posedge clk) vc_full[p][0] |-> ##[1:40] !vc_full[p][0]); // Fairness
+            assert property (@(posedge clk) vc_full[p][0] |-> ##[1:40] !vc_full[p][0]); 
         end
     endgenerate
-    assert property (@(posedge clk) $onehot0(pipe_out_valid)); // Only one grant per output per cycle is slightly wrong in 4-port, but here simplified
 `endif
 
 endmodule

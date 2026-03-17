@@ -1,54 +1,66 @@
 // ============================================================================
-// HRM Region Controller - Credible Silicon Microarchitecture Version
-// Prototype Implementation for SRMIC Architecture
+// Module: hrm_region
+// Project: SRMIC-X1
+// Description: HRM Region Controller
+//              Manages local SRAM residency with bank conflict modeling.
 // ============================================================================
 
 module hrm_region #(
-    // --- PARAMETERS ---
+    // ==================================================
+    // Parameters
+    // ==================================================
     parameter PAGE_ID_WIDTH = 16,
     parameter REGION_DEPTH  = 64,
     parameter NUM_BANKS     = 4
 )(
-    // --- PORTS ---
-    input  logic clk,
-    input  logic rst_n,
+    // ==================================================
+    // Ports
+    // ==================================================
+    input  logic                            clk,
+    input  logic                            rst_n,
 
     // Promotion Interface (from RIC)
-    input  logic                     promote_valid,
-    input  logic [PAGE_ID_WIDTH-1:0] promote_page_id,
-    output logic                     promote_ack,
+    input  logic                            promote_valid,
+    input  logic [PAGE_ID_WIDTH-1:0]        promote_page_id,
+    output logic                            promote_ack,
 
     // Demotion Interface
-    input  logic                     demote_request,
-    output logic                     demote_ack,
-    output logic [PAGE_ID_WIDTH-1:0] demote_page_id,
+    input  logic                            demote_request,
+    output logic                            demote_ack,
+    output logic [PAGE_ID_WIDTH-1:0]        demote_page_id,
 
     // Access Interface (from compute/fabric)
-    input  logic                     access_valid,
-    input  logic [PAGE_ID_WIDTH-1:0] access_page_id,
-    output logic                     access_stall,
-    output logic                     response_valid,
-    output logic                     hit,
-    output logic                     miss,
+    input  logic                            access_valid,
+    input  logic [PAGE_ID_WIDTH-1:0]        access_page_id,
+    output logic                            access_stall,
+    output logic                            response_valid,
+    output logic                            hit,
+    output logic                            miss,
 
     // Status / Monitoring
-    output logic                     region_full,
-    output logic [31:0]              bank_conflict_count
+    output logic                            region_full,
+    output logic [31:0]                     bank_conflict_count
 );
 
-    localparam ENTRIES_PER_BANK = REGION_DEPTH / NUM_BANKS;
+    // ==================================================
+    // Local State
+    // ==================================================
+    logic [PAGE_ID_WIDTH-1:0]               tag_array [0:REGION_DEPTH-1];
+    logic [REGION_DEPTH-1:0]                valid_array;
+    logic [2:0]                             lru_counters [0:REGION_DEPTH-1];
 
-    // --- STATE ---
-    logic [PAGE_ID_WIDTH-1:0] tag_array [0:REGION_DEPTH-1];
-    logic [REGION_DEPTH-1:0]  valid_array;
-    logic [2:0]               lru_counters [0:REGION_DEPTH-1];
+    // Latency Modeling Pipelines
+    logic [5:0]                             hit_pipe, miss_pipe;
+    logic [3:0]                             promo_ack_pipe;
 
-    // --- COMBINATIONAL LOGIC ---
-    logic [1:0] target_bank;
-    logic [1:0] admin_bank;
-    logic hit_comb;
-    logic [$clog2(REGION_DEPTH)-1:0] hit_index_comb;
-    logic [$clog2(REGION_DEPTH)-1:0] victim_index;
+    // ==================================================
+    // Combinational Logic
+    // ==================================================
+    logic [1:0]                             target_bank;
+    logic [1:0]                             admin_bank;
+    logic                                   hit_comb;
+    logic [$clog2(REGION_DEPTH)-1:0]        hit_index_comb;
+    logic [$clog2(REGION_DEPTH)-1:0]        victim_index;
 
     // Bank Conflict Model: bank_id = access_page_id[1:0]
     assign target_bank = access_page_id[1:0]; 
@@ -67,7 +79,7 @@ module hrm_region #(
         hit_index_comb = 0;
         for (int i = 0; i < REGION_DEPTH; i++) begin
             if (valid_array[i] && (tag_array[i] == access_page_id)) begin
-                hit_comb = 1'b1;
+                hit_comb       = 1'b1;
                 hit_index_comb = i[$clog2(REGION_DEPTH)-1:0];
             end
         end
@@ -80,6 +92,7 @@ module hrm_region #(
             if (lru_counters[i] > lru_counters[victim_index])
                 victim_index = i[$clog2(REGION_DEPTH)-1:0];
         end
+        // Invalidate priority
         for (int i = 0; i < REGION_DEPTH; i++) begin
             if (!valid_array[i]) begin
                 victim_index = i[$clog2(REGION_DEPTH)-1:0];
@@ -89,32 +102,36 @@ module hrm_region #(
     end
 
     assign demote_page_id = tag_array[victim_index];
-    assign region_full = &valid_array;
+    assign region_full    = &valid_array;
 
-    // --- SEQUENTIAL LOGIC ---
+    // ==================================================
+    // Sequential Logic
+    // ==================================================
     
     // Latency Modeling Pipelines: Hit=2c, Miss=6c, Promo=4c
-    logic [5:0] hit_pipe, miss_pipe;
-    logic [3:0] promo_ack_pipe;
-
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            hit_pipe <= 0; miss_pipe <= 0; promo_ack_pipe <= 0;
-            response_valid <= 0; hit <= 0; miss <= 0; promote_ack <= 0;
+            hit_pipe            <= 0;
+            miss_pipe           <= 0;
+            promo_ack_pipe      <= 0;
+            response_valid      <= 0;
+            hit                 <= 0;
+            miss                <= 0;
+            promote_ack         <= 0;
             bank_conflict_count <= 0;
         end else begin
             if (access_stall) bank_conflict_count <= bank_conflict_count + 1;
 
             // Shift registers for latency
-            hit_pipe  <= {hit_pipe[4:0], (access_valid && !access_stall && hit_comb)};
-            miss_pipe <= {miss_pipe[4:0], (access_valid && !access_stall && !hit_comb)};
+            hit_pipe       <= {hit_pipe[4:0], (access_valid && !access_stall && hit_comb)};
+            miss_pipe      <= {miss_pipe[4:0], (access_valid && !access_stall && !hit_comb)};
             promo_ack_pipe <= {promo_ack_pipe[2:0], promote_valid};
 
             // Pipeline Outputs
-            hit  <= hit_pipe[1];   // 2 cycles
-            miss <= miss_pipe[5];  // 6 cycles
+            hit            <= hit_pipe[1];   // 2 cycles
+            miss           <= miss_pipe[5];  // 6 cycles
             response_valid <= hit_pipe[1] || miss_pipe[5];
-            promote_ack <= promo_ack_pipe[3]; // 4 cycles
+            promote_ack    <= promo_ack_pipe[3]; // 4 cycles
         end
     end
 
@@ -153,18 +170,20 @@ module hrm_region #(
 
             if (demote_request) begin
                 valid_array[victim_index] <= 1'b0;
-                demote_ack <= 1'b1;
+                demote_ack                <= 1'b1;
             end
         end
     end
 
-    // --- ASSERTIONS ---
+    // ==================================================
+    // Assertions
+    // ==================================================
 `ifndef SYNTHESIS
     assert property (@(posedge clk) (access_valid && hit_comb) |-> valid_array[hit_index_comb]);
     assert property (@(posedge clk) demote_request |-> region_full);
     assert property (@(posedge clk) 1'b1 |-> (victim_index < REGION_DEPTH));
     
-    // Uniqueness check
+    // Tag Uniqueness
     always_comb begin
         for (int i = 0; i < REGION_DEPTH; i++) begin
             for (int j = i + 1; j < REGION_DEPTH; j++) begin

@@ -224,52 +224,43 @@ validate these effects quantitatively.
 
 ---
 
-## 9. RTL Prototype
+# RTL Prototype
 
-This repository contains a **fully synthesizable SystemVerilog RTL prototype** of the SRMIC residency tier. It has been professionalized into a credible silicon bring-up package with formal assertions, strict formatting, and measurable simulation metrics.
+This repository includes a **fully synthesizable SystemVerilog RTL prototype** of the SRMIC residency tier. It is packaged as a reviewable silicon bring-up baseline with automated verification, linting, and synthesis sanity checks.
 
-### Module Overview
+## 1. Module Overview
+
 | Module | File | Description |
 |---|---|---|
-| `ric` | `rtl/ric.sv` | Residency Intelligence Controller |
-| `hrm_region` | `rtl/hrm_region.sv` | Hot Residency Memory (Tag RAM & Bank Model) |
-| `srmesh_router` | `rtl/srmesh_router.sv` | 4-Port Mesh Router (Dual VC, WRR) |
-| `srmic_top` | `rtl/srmic_top.sv` | Top-level integration & traffic generator |
-| `tb_top` | `tb/tb_top.sv` | Testbench with scoreboard & perf metrics |
+| **RIC** | `rtl/ric.sv` | Residency Intelligence Controller. Arbitrates promotions/demotions and manages the token bucket throttle. |
+| **HRM Region** | `rtl/hrm_region.sv` | Distributed SRAM region controller with bank-level contention modeling and true LRU replacement. |
+| **SRMESH Router** | `rtl/srmesh_router.sv` | Hardened 4-port mesh router with dual Virtual Channels (VC), WRR arbitration, and credit flow control. |
+| **Top Level** | `rtl/srmic_top.sv` | Structural integration of the controller, memory regions, and fabric. Includes synthetic traffic generation. |
+| **Testbench** | `tb/tb_top.sv` | System-level verification suite with a self-checking scoreboard and performance monitoring. |
 
-### Residency Intelligence Controller (RIC)
-The RIC is the central residency arbitration engine. It tracks region occupancy, ensures promotion-demotion atomicity via a 5-state FSM, and manages a Token Bucket throttle to constrain the working set dynamically. Victim regions are selected deterministically using an aging mechanism.
+## 2. Build & Simulation
 
-### HRM Region Controller
-Models a single distributed SRAM residency region. It features a 4-bank memory model where accesses conflicting with active admin tasks (promotions/demotions) are stalled. Victim selection within the region uses a true 3-bit LRU counter array. It models physical latency: 2 cycles for hits, 6 for misses, and 4 for promotions.
-
-### Fabric Router
-A hardened 4-port mesh router implementing strict credit-based flow control. It uses two Virtual Channels (VC0 for critical data, VC1 for background tasks) with Weighted Round Robin arbitration. A hardware starvation watchdog forces grants for flits waiting > 16 cycles.
-
-### Testbench Summary
-The testbench (`tb_top.sv`) generates mixed traffic (60% misses, 25% hot-page reaccesses, 10% bursts, 5% throttle). It features a self-checking scoreboard that guarantees resident pages always yield hits. It computes aggregate hit/miss rates, average access latency, and hardware contention counts.
-
-### How to Run Simulation
-The repository uses a single `Makefile` for the build flow. All artifacts are generated in the `build/` directory.
+The project uses a standard `Makefile` for all hardware tasks. Artifacts are generated in the `build/` directory.
 
 ```bash
-# Run Verilator simulation (compiles, runs, generates VCD)
+# Run Verilator simulation (Recommended)
 make sim
 
 # Run Icarus Verilog simulation
 make sim-iverilog
 
-# Run Verilator Lint
+# Run static analysis (Lint)
 make lint
 
-# Run Synthesis Sanity Check (Yosys)
+# Run synthesis sanity check (Yosys)
 make synth
-
-# Clean artifacts
-make clean
 ```
 
-### Expected Output Example
+## 3. Verification & Performance
+
+The simulation runs for a default of **20,000 cycles** with mixed traffic patterns (random misses, re-accesses, and burst conflicts). At the end of the run, a summary is printed and saved to `build/sim_results.log`.
+
+**Expected Output Example:**
 ```text
 ============================================================
 SRMIC RTL SIM SUMMARY
@@ -278,32 +269,24 @@ Total cycles:       20000
 Total requests:     18450
 Hits:               6500
 Misses:             11950
-Promotions:         240
-Demotions:          180
-Bank conflicts:     45
-Router stalls:      12
 Average latency:    4.59 cycles
 Hit rate:           35.23%
-Miss rate:          64.77%
 ------------------------------------------------------------
 SRMIC RTL TEST: PASS
 ============================================================
 ```
 
-### What This Prototype Proves
-1. Deterministic hardware residency arbitration is viable.
-2. Fabric fairness and credit safety can be maintained under burst contention.
-3. The working set can be bounded dynamically without software intervention.
-
-### Known Limitations
-* **SRAM Macros:** `hrm_region` uses inferred registers. Must be mapped to real SRAM macros.
-* **Scoreboard Depth:** Uses a 256-entry wrap-around reference model.
-* **Top-Level Mesh:** Currently instantiates a single aggregate router for sanity checking rather than a fully wired 32-node mesh.
+## 4. Known Prototype Limitations
+*   **Memory Macros:** Storage is currently inferred as registers. Production flows require mapping to physical SRAM macros.
+*   **Mesh Topology:** The top-level instantiates a small verifiable segment of the fabric; the full 32-node architecture is described in the [Whitepaper](SRMIC_Architecture_Whitepaper_30pg.pdf).
 
 ---
 
-## 10. Architectural Invariants
-For details on the hardware invariants strictly enforced by SVA, see [Architectural Invariants](docs/ARCHITECTURAL_INVARIANTS.md).
+## Architectural Documentation
+Detailed hardware specifications and invariants are available in the `docs/` directory:
+*   [RTL Bring-up Guide](docs/RTL_BRINGUP.md)
+*   [Architectural Invariants](docs/ARCHITECTURAL_INVARIANTS.md)
+*   [Synthesis Notes](docs/SYNTH_REPORT_TEMPLATE.md)
 
 ---
 
