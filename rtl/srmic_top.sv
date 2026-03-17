@@ -31,7 +31,8 @@ module srmic_top #(
 
     // Performance Monitoring (synthesis-visible)
     // Debug ports excluded from synthesis via `ifndef SYNTHESIS
-    output logic [2:0]                      dbg_ric_state,
+`ifndef SYNTHESIS
+    ,output logic [2:0]                      dbg_ric_state,
     output logic [4:0]                      dbg_fifo_count,
     output logic [3:0]                      dbg_credit_counter,
     output logic [$clog2(NUM_REGIONS)-1:0]  dbg_selected_region,
