@@ -58,6 +58,13 @@ module hrm_region #(
     logic [$clog2(REGION_DEPTH)-1:0]        victim_index_pipe [0:3];
     logic [$clog2(REGION_DEPTH)-1:0]        demote_victim_index_reg;
 
+`ifndef SYNTHESIS
+    // Shadow registers for promotion commit verification
+    logic                                   promo_commit_check_valid;
+    logic [$clog2(REGION_DEPTH)-1:0]        promo_commit_check_index;
+    logic [PAGE_ID_WIDTH-1:0]               promo_commit_check_page_id;
+`endif
+
     // ==================================================
     // Combinational Logic
     // ==================================================
@@ -161,6 +168,11 @@ module hrm_region #(
                 tag_array[i]    <= 0;
                 lru_counters[i] <= 0;
             end
+`ifndef SYNTHESIS
+            promo_commit_check_valid <= 1'b0;
+            promo_commit_check_index <= 0;
+            promo_commit_check_page_id <= 0;
+`endif
         end else begin
             demote_ack <= 1'b0;
 
@@ -184,6 +196,16 @@ module hrm_region #(
                         if (lru_counters[i] < 3'd7) lru_counters[i] <= lru_counters[i] + 1;
                     end
                 end
+`ifndef SYNTHESIS
+                // Set shadow registers for one-cycle-delayed check
+                promo_commit_check_valid <= 1'b1;
+                promo_commit_check_index <= victim_index_pipe[3];
+                promo_commit_check_page_id <= promote_page_id_pipe[3];
+`endif
+            end else begin
+`ifndef SYNTHESIS
+                promo_commit_check_valid <= 1'b0;
+`endif
             end
 
             // Demotion captures victim index at request time
@@ -211,9 +233,11 @@ module hrm_region #(
             assert (victim_index < REGION_DEPTH)
                 else $fatal("HRM victim_index out of bounds");
             
-            // New Assertion: Promotion commit integrity
-            if (promo_ack_pipe[3]) begin
-                assert (tag_array[victim_index_pipe[3]] == promote_page_id_pipe[3])
+            // Corrected Promotion commit integrity check (delayed by 1 cycle)
+            if (promo_commit_check_valid) begin
+                assert (valid_array[promo_commit_check_index] == 1'b1)
+                    else $error("HRM_PROMO_ERROR: Valid bit not set at commit time");
+                assert (tag_array[promo_commit_check_index] == promo_commit_check_page_id)
                     else $error("HRM_PROMO_ERROR: Tag mismatch at commit time");
             end
         end
