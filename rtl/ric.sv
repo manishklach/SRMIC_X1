@@ -43,7 +43,7 @@ module ric #(
 
     // Debug Observability
     output logic [2:0]                      dbg_state,
-    output logic [3:0]                      dbg_fifo_count,
+    output logic [4:0]                      dbg_fifo_count,
     output logic [3:0]                      dbg_credit_counter,
     output logic [1:0]                      dbg_target_region,
     output logic [6:0]                      dbg_occupancy [0:3]
@@ -165,7 +165,7 @@ module ric #(
 
     // Debug Mapping
     assign dbg_state          = state;
-    assign dbg_fifo_count     = fifo_count[3:0];
+    assign dbg_fifo_count     = fifo_count[4:0];
     assign dbg_credit_counter = credit_counter;
     assign dbg_target_region  = target_region[1:0];
     always_comb begin

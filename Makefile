@@ -25,7 +25,7 @@ all: lint sim formal synth
 # --- Verilator Simulation ---
 sim: $(BUILD_DIR)
 	@echo "--- [VERILATOR] Compiling and Building ---"
-	$(VERILATOR) --cc --trace --assert -Wall -Wno-fatal -Mdir $(OBJ_DIR) $(RTL_SRC) --exe ../$(TB_SRC) --top-module $(TOP_MODULE)
+	$(VERILATOR) --cc --trace --assert -Wall -Wno-fatal -Mdir $(OBJ_DIR) $(RTL_SRC) --exe $(TB_SRC) --top-module $(TOP_MODULE)
 	make -C $(OBJ_DIR) -j -f V$(TOP_MODULE).mk V$(TOP_MODULE)
 	@echo "--- [VERILATOR] Running Simulation ---"
 	cd $(BUILD_DIR) && ./obj_dir/V$(TOP_MODULE) +seed=$(SEED)

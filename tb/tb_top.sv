@@ -126,7 +126,7 @@ module tb_top;
         $display("[%0t] SIM SEED: %0d", $time, seed);
 
         // Waveform Dump
-        $dumpfile("build/srmic_trace.vcd");
+        $dumpfile("srmic_trace.vcd");
         $dumpvars(0, tb_top);
 
         // Initial State
@@ -193,7 +193,7 @@ module tb_top;
         $display("============================================================\n");
 
         // Logging
-        fd = $fopen("build/sim_results.log", "w");
+        fd = $fopen("sim_results.log", "w");
         if (fd) begin
             $fdisplay(fd, "cycles=%0d", total_cycles);
             $fdisplay(fd, "requests=%0d", total_requests);

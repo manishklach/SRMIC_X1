@@ -29,7 +29,7 @@ module srmic_top #(
 
     // Debug Observability
     output logic [2:0]                      dbg_ric_state,
-    output logic [3:0]                      dbg_fifo_count,
+    output logic [4:0]                      dbg_fifo_count,
     output logic [3:0]                      dbg_credit_counter,
     output logic [1:0]                      dbg_selected_region,
     output logic [6:0]                      dbg_occupancy [0:3],
