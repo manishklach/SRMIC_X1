@@ -31,7 +31,6 @@ module srmic_top #(
 
     // Performance Monitoring (synthesis-visible)
     // Debug ports excluded from synthesis via `ifndef SYNTHESIS
-`ifndef SYNTHESIS
     output logic [2:0]                      dbg_ric_state,
     output logic [4:0]                      dbg_fifo_count,
     output logic [3:0]                      dbg_credit_counter,
@@ -86,7 +85,7 @@ module srmic_top #(
     logic [PAGE_ID_WIDTH-1:0]               hrm_demote_page_id [0:NUM_REGIONS-1];
     logic [3:0]                             dummy_in_credit_ret;
     logic [3:0]                             dummy_out_valid;
-    logic [FLIT_WIDTH-1:0]                  dummy_out_flit [0:3];
+    logic [4*FLIT_WIDTH-1:0]                dummy_out_flit;
     logic [3:0]                             dummy_out_vc_id;
 
     // Synthetic Traffic Generation
@@ -247,7 +246,7 @@ module srmic_top #(
         .clk(clk),
         .rst_n(rst_n),
         .in_valid(4'b0),
-        .in_flit('{default:0}),
+        .in_flit({(4*FLIT_WIDTH){1'b0}}),
         .in_vc_id(4'b0),
         .in_credit_ret(dummy_in_credit_ret),
         .out_valid(dummy_out_valid),

@@ -26,12 +26,12 @@ module srmesh_router #(
 
     // Interface per port (North:0, South:1, East:2, West:3)
     input  logic [3:0]                      in_valid,
-    input  logic [FLIT_WIDTH-1:0]           in_flit [0:3],
+    input  logic [4*FLIT_WIDTH-1:0]         in_flit,
     input  logic [3:0]                      in_vc_id,
     output logic [3:0]                      in_credit_ret,
 
     output logic [3:0]                      out_valid,
-    output logic [FLIT_WIDTH-1:0]           out_flit [0:3],
+    output logic [4*FLIT_WIDTH-1:0]         out_flit,
     output logic [3:0]                      out_vc_id,
     input  logic [3:0]                      out_credit_ret,
 
@@ -156,7 +156,7 @@ module srmesh_router #(
             // Buffer Input & Credit Handshake
             for (int p = 0; p < 4; p++) begin
                 if (in_valid[p] && !vc_full[p][in_vc_id[p]]) begin
-                    vc_buf[p][in_vc_id[p]]         <= in_flit[p];
+                    vc_buf[p][in_vc_id[p]]         <= in_flit[p*FLIT_WIDTH +: FLIT_WIDTH];
                     vc_full[p][in_vc_id[p]]        <= 1'b1;
                     starvation_cnt[p][in_vc_id[p]] <= 0;
                 end
