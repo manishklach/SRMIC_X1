@@ -14,10 +14,16 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Setup OSS CAD Suite
-      uses: YosysHQ/setup-oss-cad-suite@v3
-      with:
-          python-override: true
+    # Install tools directly from Ubuntu repos
+    - name: Install Verilator + Yosys
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y verilator yosys
+
+    # Optional: install SMT solver for formal
+    - name: Install SMT Solver (for formal)
+      run: |
+        sudo apt-get install -y boolector
 
     - name: Run Verilator Lint
       run: make lint
