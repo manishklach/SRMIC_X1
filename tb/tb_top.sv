@@ -19,6 +19,9 @@ module tb_top;
     localparam RUN_CYCLES      = 20000;
     localparam FIFO_DEPTH      = 32; // Increased to handle stalls
 
+    localparam logic [15:0] DEBUG_PAGE    = 16'h000a;
+    localparam logic        DEBUG_VERBOSE = 1'b1;
+
     // ==================================================
     // Ports / Signals
     // ==================================================
@@ -42,6 +45,12 @@ module tb_top;
     logic [NUM_REGIONS-1:0]          dbg_response_valid;
     logic [NUM_REGIONS-1:0]          dbg_region_hit;
     logic [NUM_REGIONS-1:0]          dbg_region_miss;
+
+    logic [PAGE_ID_WIDTH-1:0]        dbg_last_access_page_id [0:NUM_REGIONS-1];
+    logic [NUM_REGIONS-1:0]          dbg_last_hit;
+    logic [NUM_REGIONS-1:0]          dbg_last_miss;
+    logic [PAGE_ID_WIDTH-1:0]        dbg_last_promoted_page  [0:NUM_REGIONS-1];
+    logic [PAGE_ID_WIDTH-1:0]        dbg_last_demoted_page   [0:NUM_REGIONS-1];
 
     // Region-local promotion commit signals (captured via hierarchical paths)
     logic [NUM_REGIONS-1:0] hrm_promote_ack_internal;
@@ -121,13 +130,26 @@ module tb_top;
         .dbg_access_stall(dbg_access_stall),
         .dbg_response_valid(dbg_response_valid),
         .dbg_region_hit(dbg_region_hit),
-        .dbg_region_miss(dbg_region_miss)
+        .dbg_region_miss(dbg_region_miss),
+        .dbg_last_access_page_id(dbg_last_access_page_id),
+        .dbg_last_hit(dbg_last_hit),
+        .dbg_last_miss(dbg_last_miss),
+        .dbg_last_promoted_page(dbg_last_promoted_page),
+        .dbg_last_demoted_page(dbg_last_demoted_page)
     );
 
     // ==================================================
-    // Combinational Logic
+    // Tasks
     // ==================================================
-    // (None)
+    task dump_sb_for_page(logic [PAGE_ID_WIDTH-1:0] page_id);
+        $display("--- Scoreboard Dump for Page 0x%h ---", page_id);
+        for (int i=0; i<SCOREBOARD_SIZE; i++) begin
+            if (sb_resident_pages[i] == page_id && sb_state[i] != NOT_RESIDENT) begin
+                $display("  Entry %0d: state=%s region=%0d timer=%0d", i, sb_state[i].name(), sb_region[i], sb_timer[i]);
+            end
+        end
+        $display("--------------------------------------");
+    endtask
 
     // ==================================================
     // Sequential Logic (Scoreboard)
@@ -147,7 +169,20 @@ module tb_top;
                 sb_timer[i]          <= 0;
             end
         end else begin
-            // 1. Prediction at time of access issue (T0)
+            // 1. Duplicate Residency Detection
+            for (int i=0; i<SCOREBOARD_SIZE; i++) begin
+                if (sb_state[i] == RESIDENT || sb_state[i] == DEMOTION_PENDING) begin
+                    for (int j=i+1; j<SCOREBOARD_SIZE; j++) begin
+                        if ((sb_state[j] == RESIDENT || sb_state[j] == DEMOTION_PENDING) && 
+                            (sb_resident_pages[i] == sb_resident_pages[j])) begin
+                            $display("[%0d] DUPLICATE_SCOREBOARD_RESIDENCY: page=0x%h entries %0d and %0d", 
+                                     total_cycles, sb_resident_pages[i], i, j);
+                        end
+                    end
+                end
+            end
+
+            // 2. Prediction at time of access issue (T0)
             // Access is broadcast to all regions; each determines its own expected_hit locally.
             if (dut.synth_access_valid) begin
                 for (int r=0; r<NUM_REGIONS; r++) begin
@@ -155,8 +190,6 @@ module tb_top;
                         automatic logic expected_hit_r = 1'b0;
                         for (int i=0; i<SCOREBOARD_SIZE; i++) begin
                             // A hit occurs in region 'r' only if the page is architecturally resident.
-                            // PROMOTION_PENDING is NOT resident.
-                            // DEMOTION_PENDING IS still resident until the demotion clears.
                             if ((sb_state[i] == RESIDENT || sb_state[i] == DEMOTION_PENDING) && 
                                 (sb_resident_pages[i] == dut.synth_access_id) &&
                                 (sb_region[i] == r[$clog2(NUM_REGIONS)-1:0])) begin
@@ -173,22 +206,34 @@ module tb_top;
                             $error("[%0t] SB_FIFO_OVERFLOW (Region %0d): Increase FIFO_DEPTH", $time, r);
                             scoreboard_errors++;
                         end
+
+                        if (DEBUG_VERBOSE && dut.synth_access_id == DEBUG_PAGE) begin
+                            $display("[%0d] TRACE page=0x%h region=%0d event=REQUEST_ISSUED expected=%0d stall=0", 
+                                     total_cycles, dut.synth_access_id, r, expected_hit_r);
+                        end
+                    end else if (DEBUG_VERBOSE && dut.synth_access_id == DEBUG_PAGE) begin
+                        $display("[%0d] TRACE page=0x%h region=%0d event=REQUEST_STALLED", 
+                                 total_cycles, dut.synth_access_id, r);
                     end
                 end
             end
 
-            // 2. Residency State Machine Updates (Aging and Demotion Commit)
+            // 3. Residency State Machine Updates (Aging and Demotion Commit)
             for (int i=0; i<SCOREBOARD_SIZE; i++) begin
                 if (sb_timer[i] > 0) sb_timer[i] <= sb_timer[i] - 1;
                 
                 // Demotion transition is timer-based (1 cycle)
                 if (sb_state[i] == DEMOTION_PENDING && sb_timer[i] == 1) begin
+                    if (DEBUG_VERBOSE && sb_resident_pages[i] == DEBUG_PAGE) begin
+                        $display("[%0d] TRACE page=0x%h event=DEMOTION_COMPLETED region=%0d", 
+                                 total_cycles, sb_resident_pages[i], sb_region[i]);
+                    end
                     sb_state[i] <= NOT_RESIDENT;
                     sb_timer[i] <= 0;
                 end
             end
 
-            // 3. Handle Promotion Issue (T0)
+            // 4. Handle Promotion Issue (T0)
             if (perf_promo) begin
                 automatic int found = -1;
                 for (int i=0; i<SCOREBOARD_SIZE; i++) begin
@@ -201,21 +246,28 @@ module tb_top;
                 
                 sb_state[found]          <= PROMOTION_PENDING;
                 sb_resident_pages[found] <= dut.promote_page_id;
-                // Region ownership is NOT assigned yet; wait for commit (T4).
                 sb_timer[found]          <= 4;
+
+                if (DEBUG_VERBOSE && dut.promote_page_id == DEBUG_PAGE) begin
+                    $display("[%0d] TRACE page=0x%h event=PROMOTION_ISSUED entry=%0d", 
+                             total_cycles, dut.promote_page_id, found);
+                end
             end
 
-            // 4. Handle Promotion Commit (T4 - Region Ownership Assigned)
+            // 5. Handle Promotion Commit (T4 - Region Ownership Assigned)
             for (int r=0; r<NUM_REGIONS; r++) begin
                 if (hrm_promote_ack_internal[r]) begin
                     automatic logic found_pending = 1'b0;
                     for (int i=0; i<SCOREBOARD_SIZE; i++) begin
-                        // Find the oldest pending promotion that is ready to commit
                         if (sb_state[i] == PROMOTION_PENDING && sb_timer[i] <= 1) begin
                             sb_state[i]  <= RESIDENT;
                             sb_region[i] <= r[$clog2(NUM_REGIONS)-1:0];
                             sb_timer[i]  <= 0;
                             found_pending = 1'b1;
+                            if (DEBUG_VERBOSE && sb_resident_pages[i] == DEBUG_PAGE) begin
+                                $display("[%0d] TRACE page=0x%h event=PROMOTION_COMMITTED region=%0d", 
+                                         total_cycles, sb_resident_pages[i], r);
+                            end
                             break;
                         end
                     end
@@ -226,12 +278,16 @@ module tb_top;
                 end
             end
 
-            // 5. Handle Demotions (1 cycle latency)
+            // 6. Handle Demotions (1 cycle latency)
             if (perf_demo) begin
                 for (int i=0; i<SCOREBOARD_SIZE; i++) begin
                     if (sb_state[i] != NOT_RESIDENT && 
                         sb_resident_pages[i] == dut.demote_page_id &&
                         sb_region[i] == dbg_selected_region) begin 
+                        if (DEBUG_VERBOSE && sb_resident_pages[i] == DEBUG_PAGE) begin
+                            $display("[%0d] TRACE page=0x%h event=DEMOTION_ISSUED region=%0d", 
+                                     total_cycles, sb_resident_pages[i], sb_region[i]);
+                        end
                         sb_state[i] <= DEMOTION_PENDING;
                         sb_timer[i] <= 1;
                         break;
@@ -239,19 +295,30 @@ module tb_top;
                 end
             end
             
-            // 6. Validate at Response Time (Per Region)
+            // 7. Validate at Response Time (Per Region)
             for (int r=0; r<NUM_REGIONS; r++) begin
                 if (dbg_response_valid[r]) begin
                     if (sb_fifo_count[r] > 0) begin
                         automatic sb_req_t req = sb_fifo[r][sb_fifo_rd_ptr[r]];
                         automatic logic actual_hit = perf_hit[r];
                         
+                        if (DEBUG_VERBOSE && req.page_id == DEBUG_PAGE) begin
+                            $display("[%0d] TRACE page=0x%h region=%0d event=RESPONSE_VALID expected=%0d actual=%0d", 
+                                     total_cycles, req.page_id, r, req.expected_hit, actual_hit);
+                        end
+
                         if (actual_hit != req.expected_hit) begin
                             $error("[%0t] SB_MISMATCH (Region %0d): Page 0x%h, Expected %s, Got %s", 
                                    $time, r, req.page_id, 
                                    req.expected_hit ? "HIT" : "MISS",
                                    actual_hit ? "HIT" : "MISS");
+                            dump_sb_for_page(req.page_id);
+                            $display("FIFO entry: page=0x%h expected_hit=%0d", req.page_id, req.expected_hit);
+                            $display("DUT region %0d state: last_access=0x%h last_hit=%0d last_miss=%0d last_promo=0x%h last_demo=0x%h",
+                                     r, dbg_last_access_page_id[r], dbg_last_hit[r], dbg_last_miss[r], 
+                                     dbg_last_promoted_page[r], dbg_last_demoted_page[r]);
                             scoreboard_errors++;
+                            $fatal("SB_MISMATCH triage triggered");
                         end
                         
                         sb_fifo_rd_ptr[r] <= (sb_fifo_rd_ptr[r] + 1) % FIFO_DEPTH;

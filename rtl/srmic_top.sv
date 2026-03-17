@@ -43,7 +43,13 @@ module srmic_top #(
     output logic [NUM_REGIONS-1:0]          dbg_access_stall,
     output logic [NUM_REGIONS-1:0]          dbg_response_valid,
     output logic [NUM_REGIONS-1:0]          dbg_region_hit,
-    output logic [NUM_REGIONS-1:0]          dbg_region_miss
+    output logic [NUM_REGIONS-1:0]          dbg_region_miss,
+
+    output logic [PAGE_ID_WIDTH-1:0]        dbg_last_access_page_id [0:NUM_REGIONS-1],
+    output logic [NUM_REGIONS-1:0]          dbg_last_hit,
+    output logic [NUM_REGIONS-1:0]          dbg_last_miss,
+    output logic [PAGE_ID_WIDTH-1:0]        dbg_last_promoted_page  [0:NUM_REGIONS-1],
+    output logic [PAGE_ID_WIDTH-1:0]        dbg_last_demoted_page   [0:NUM_REGIONS-1]
 );
 
     // ==================================================
@@ -164,7 +170,7 @@ module srmic_top #(
                 .promote_valid(promote_valid && (promote_region_id == i)),
                 .promote_page_id(promote_page_id),
                 .promote_ack(hrm_promote_ack[i]),
-                .demote_request(demote_valid && (promote_region_id == i)),
+                .demote_request(demote_valid && (dbg_selected_region == i)),
                 .demote_ack(hrm_demote_ack[i]),
                 .demote_page_id(dummy_demote_page_id[i]),
                 .access_valid(synth_access_valid), 
@@ -174,7 +180,12 @@ module srmic_top #(
                 .hit(hrm_hit[i]),
                 .miss(hrm_miss[i]),
                 .region_full(region_full[i]),
-                .bank_conflict_count(hrm_bank_conflicts[i])
+                .bank_conflict_count(hrm_bank_conflicts[i]),
+                .dbg_last_access_page_id(dbg_last_access_page_id[i]),
+                .dbg_last_hit(dbg_last_hit[i]),
+                .dbg_last_miss(dbg_last_miss[i]),
+                .dbg_last_promoted_page(dbg_last_promoted_page[i]),
+                .dbg_last_demoted_page(dbg_last_demoted_page[i])
             );
             assign dbg_region_hit[i]  = hrm_hit[i];
             assign dbg_region_miss[i] = hrm_miss[i];

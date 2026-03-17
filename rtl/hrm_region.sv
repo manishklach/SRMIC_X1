@@ -41,7 +41,14 @@ module hrm_region #(
 
     // Status / Monitoring
     output logic                            region_full,
-    output logic [31:0]                     bank_conflict_count
+    output logic [31:0]                     bank_conflict_count,
+
+    // Debug Observability
+    output logic [PAGE_ID_WIDTH-1:0]        dbg_last_access_page_id,
+    output logic                            dbg_last_hit,
+    output logic                            dbg_last_miss,
+    output logic [PAGE_ID_WIDTH-1:0]        dbg_last_promoted_page,
+    output logic [PAGE_ID_WIDTH-1:0]        dbg_last_demoted_page
 );
 
     // ==================================================
@@ -135,8 +142,15 @@ module hrm_region #(
                 promote_page_id_pipe[i] <= 0;
                 victim_index_pipe[i]    <= 0;
             end
+            dbg_last_access_page_id <= 0;
+            dbg_last_hit            <= 0;
+            dbg_last_miss           <= 0;
         end else begin
             if (access_stall) bank_conflict_count <= bank_conflict_count + 1;
+
+            if (access_valid && !access_stall) begin
+                dbg_last_access_page_id <= access_page_id;
+            end
 
             // Shift registers for latency
             hit_pipe       <= {hit_pipe[4:0], (access_valid && !access_stall && hit_comb)};
@@ -156,6 +170,12 @@ module hrm_region #(
             miss           <= miss_pipe[5];  // 6 cycles
             response_valid <= hit_pipe[1] || miss_pipe[5];
             promote_ack    <= promo_ack_pipe[3]; // 4 cycles
+
+            if (hit_pipe[1]) dbg_last_hit <= 1'b1;
+            else if (response_valid) dbg_last_hit <= 1'b0;
+
+            if (miss_pipe[5]) dbg_last_miss <= 1'b1;
+            else if (response_valid) dbg_last_miss <= 1'b0;
         end
     end
 
@@ -173,6 +193,8 @@ module hrm_region #(
             promo_commit_check_index <= 0;
             promo_commit_check_page_id <= 0;
 `endif
+            dbg_last_promoted_page <= 0;
+            dbg_last_demoted_page  <= 0;
         end else begin
             demote_ack <= 1'b0;
 
@@ -196,6 +218,7 @@ module hrm_region #(
                         if (lru_counters[i] < 3'd7) lru_counters[i] <= lru_counters[i] + 1;
                     end
                 end
+                dbg_last_promoted_page <= promote_page_id_pipe[3];
 `ifndef SYNTHESIS
                 // Set shadow registers for one-cycle-delayed check
                 promo_commit_check_valid <= 1'b1;
@@ -211,6 +234,7 @@ module hrm_region #(
             // Demotion captures victim index at request time
             if (demote_request) begin
                 demote_victim_index_reg <= victim_index;
+                dbg_last_demoted_page   <= tag_array[victim_index];
             end
 
             // Invalidation happens 1 cycle after request (sync with demote_ack)
