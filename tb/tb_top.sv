@@ -72,6 +72,7 @@ module tb_top;
 
     res_state_t sb_state [0:SCOREBOARD_SIZE-1];
     logic [PAGE_ID_WIDTH-1:0] sb_resident_pages [0:SCOREBOARD_SIZE-1];
+    logic [$clog2(NUM_REGIONS)-1:0] sb_region [0:SCOREBOARD_SIZE-1];
     int sb_timer [0:SCOREBOARD_SIZE-1];
     
     // --- Scoreboard Response FIFOs (Per Region) ---
@@ -134,25 +135,28 @@ module tb_top;
             for (int i=0; i<SCOREBOARD_SIZE; i++) begin
                 sb_state[i]          <= NOT_RESIDENT;
                 sb_resident_pages[i] <= 0;
+                sb_region[i]         <= 0;
                 sb_timer[i]          <= 0;
             end
         end else begin
             // 1. Prediction at time of access issue (T0)
-            // Note: Access is broadcast to all regions, but each can stall independently
+            // Access is broadcast to all regions; each determines its own expected_hit locally.
             if (dut.synth_access_valid) begin
-                automatic logic current_hit = 1'b0;
-                for (int i=0; i<SCOREBOARD_SIZE; i++) begin
-                    if ((sb_state[i] == RESIDENT || (sb_state[i] == PROMOTION_PENDING && sb_timer[i] == 1)) && 
-                        (sb_resident_pages[i] == dut.synth_access_id)) begin
-                        current_hit = 1'b1;
-                    end
-                end
-
                 for (int r=0; r<NUM_REGIONS; r++) begin
                     if (!dbg_access_stall[r]) begin
+                        automatic logic expected_hit_r = 1'b0;
+                        for (int i=0; i<SCOREBOARD_SIZE; i++) begin
+                            // A hit occurs in region 'r' only if the page is resident IN THAT REGION.
+                            if ((sb_state[i] == RESIDENT || (sb_state[i] == PROMOTION_PENDING && sb_timer[i] == 1)) && 
+                                (sb_resident_pages[i] == dut.synth_access_id) &&
+                                (sb_region[i] == r[$clog2(NUM_REGIONS)-1:0])) begin
+                                expected_hit_r = 1'b1;
+                            end
+                        end
+
                         if (sb_fifo_count[r] < FIFO_DEPTH) begin
                             sb_fifo[r][sb_fifo_wr_ptr[r]].page_id      <= dut.synth_access_id;
-                            sb_fifo[r][sb_fifo_wr_ptr[r]].expected_hit <= current_hit;
+                            sb_fifo[r][sb_fifo_wr_ptr[r]].expected_hit <= expected_hit_r;
                             sb_fifo_wr_ptr[r] <= (sb_fifo_wr_ptr[r] + 1) % FIFO_DEPTH;
                             sb_fifo_count[r]  <= sb_fifo_count[r] + 1;
                         end else begin
@@ -187,6 +191,7 @@ module tb_top;
                 
                 sb_state[found]          <= PROMOTION_PENDING;
                 sb_resident_pages[found] <= dut.promote_page_id;
+                sb_region[found]         <= dbg_selected_region;
                 sb_timer[found]          <= 4;
             end
 
@@ -194,6 +199,8 @@ module tb_top;
             if (perf_demo) begin
                 for (int i=0; i<SCOREBOARD_SIZE; i++) begin
                     if (sb_state[i] != NOT_RESIDENT && sb_resident_pages[i] == dut.demote_page_id) begin
+                        // Note: In current RIC/HRM, demotion is region-specific based on target_region.
+                        // Scoreboard entry is only demoted if it matches the demoted page.
                         sb_state[i] <= DEMOTION_PENDING;
                         sb_timer[i] <= 1;
                         break;
