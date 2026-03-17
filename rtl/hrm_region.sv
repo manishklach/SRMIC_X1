@@ -1,11 +1,15 @@
+// ============================================================================
 // HRM Region Controller - Credible Silicon Microarchitecture Version
 // Prototype Implementation for SRMIC Architecture
+// ============================================================================
 
 module hrm_region #(
+    // --- PARAMETERS ---
     parameter PAGE_ID_WIDTH = 16,
-    parameter REGION_DEPTH = 64,
-    parameter NUM_BANKS = 4
+    parameter REGION_DEPTH  = 64,
+    parameter NUM_BANKS     = 4
 )(
+    // --- PORTS ---
     input  logic clk,
     input  logic rst_n,
 
@@ -34,39 +38,30 @@ module hrm_region #(
 
     localparam ENTRIES_PER_BANK = REGION_DEPTH / NUM_BANKS;
 
-    // --- Storage ---
+    // --- STATE ---
     logic [PAGE_ID_WIDTH-1:0] tag_array [0:REGION_DEPTH-1];
     logic [REGION_DEPTH-1:0]  valid_array;
     logic [2:0]               lru_counters [0:REGION_DEPTH-1];
 
-    // --- Phase 2: Bank Conflict Model ---
-    // bank_id = index % 4 (using index from access_page_id for now as prototype)
-    // In a real cache, this would be bits of the address.
+    // --- COMBINATIONAL LOGIC ---
     logic [1:0] target_bank;
-    assign target_bank = access_page_id[1:0]; 
-
-    // Simulation of bank busy if admin task is in progress
-    // We'll track which bank is being modified by promote/demote
     logic [1:0] admin_bank;
-    assign admin_bank = promote_valid ? promote_page_id[1:0] : 2'd0; // Simplified
+    logic hit_comb;
+    logic [$clog2(REGION_DEPTH)-1:0] hit_index_comb;
+    logic [$clog2(REGION_DEPTH)-1:0] victim_index;
+
+    // Bank Conflict Model: bank_id = access_page_id[1:0]
+    assign target_bank = access_page_id[1:0]; 
+    assign admin_bank  = promote_valid ? promote_page_id[1:0] : 2'd0;
 
     always_comb begin
         access_stall = 1'b0;
         if (access_valid && (promote_valid || demote_request)) begin
-            // Conflict if target bank matches admin bank
             if (target_bank == admin_bank) access_stall = 1'b1;
         end
     end
 
-    always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n) bank_conflict_count <= 0;
-        else if (access_stall) bank_conflict_count <= bank_conflict_count + 1;
-    end
-
-    // --- Tag Match Logic ---
-    logic hit_comb;
-    logic [$clog2(REGION_DEPTH)-1:0] hit_index_comb;
-    
+    // Tag Match Logic
     always_comb begin
         hit_comb = 1'b0;
         hit_index_comb = 0;
@@ -78,8 +73,7 @@ module hrm_region #(
         end
     end
 
-    // --- Victim Selection ---
-    logic [$clog2(REGION_DEPTH)-1:0] victim_index;
+    // Victim Selection (LRU)
     always_comb begin
         victim_index = 0;
         for (int i = 1; i < REGION_DEPTH; i++) begin
@@ -95,9 +89,11 @@ module hrm_region #(
     end
 
     assign demote_page_id = tag_array[victim_index];
+    assign region_full = &valid_array;
 
-    // --- Phase 3: Latency Modeling Pipelines ---
-    // Hit = 2 cycles, Miss = 6 cycles, Promotion = 4 cycles
+    // --- SEQUENTIAL LOGIC ---
+    
+    // Latency Modeling Pipelines: Hit=2c, Miss=6c, Promo=4c
     logic [5:0] hit_pipe, miss_pipe;
     logic [3:0] promo_ack_pipe;
 
@@ -105,22 +101,23 @@ module hrm_region #(
         if (!rst_n) begin
             hit_pipe <= 0; miss_pipe <= 0; promo_ack_pipe <= 0;
             response_valid <= 0; hit <= 0; miss <= 0; promote_ack <= 0;
+            bank_conflict_count <= 0;
         end else begin
-            // Shift registers
+            if (access_stall) bank_conflict_count <= bank_conflict_count + 1;
+
+            // Shift registers for latency
             hit_pipe  <= {hit_pipe[4:0], (access_valid && !access_stall && hit_comb)};
             miss_pipe <= {miss_pipe[4:0], (access_valid && !access_stall && !hit_comb)};
             promo_ack_pipe <= {promo_ack_pipe[2:0], promote_valid};
 
-            // Outputs at specific taps
+            // Pipeline Outputs
             hit  <= hit_pipe[1];   // 2 cycles
             miss <= miss_pipe[5];  // 6 cycles
             response_valid <= hit_pipe[1] || miss_pipe[5];
-            
             promote_ack <= promo_ack_pipe[3]; // 4 cycles
         end
     end
 
-    // --- Sequential Logic for State ---
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             valid_array <= 0;
@@ -132,7 +129,7 @@ module hrm_region #(
         end else begin
             demote_ack <= 1'b0;
 
-            // Update LRU on hit (at the time of access, simplified)
+            // LRU Update
             if (access_valid && !access_stall && hit_comb) begin
                 lru_counters[hit_index_comb] <= 3'd0;
                 for (int i = 0; i < REGION_DEPTH; i++) begin
@@ -142,9 +139,9 @@ module hrm_region #(
                 end
             end
 
-            // Apply promotion (at the end of pipeline or start? following spec: latency=4 for promo)
+            // Apply Promotion at end of pipeline
             if (promo_ack_pipe[3]) begin
-                tag_array[victim_index]    <= promote_page_id; // Need to pipe this id too?
+                tag_array[victim_index]    <= promote_page_id; 
                 valid_array[victim_index]  <= 1'b1;
                 lru_counters[victim_index] <= 3'd0;
                 for (int i = 0; i < REGION_DEPTH; i++) begin
@@ -161,17 +158,13 @@ module hrm_region #(
         end
     end
 
-    assign region_full = &valid_array;
-
-    // --- Phase 1: SVA Assertions ---
+    // --- ASSERTIONS ---
 `ifndef SYNTHESIS
-    // 1. Tag hit implies valid bit high
     assert property (@(posedge clk) (access_valid && hit_comb) |-> valid_array[hit_index_comb]);
-    
-    // 2. Demote only occurs when region_full
     assert property (@(posedge clk) demote_request |-> region_full);
-
-    // 3. No two entries hold same tag when valid
+    assert property (@(posedge clk) 1'b1 |-> (victim_index < REGION_DEPTH));
+    
+    // Uniqueness check
     always_comb begin
         for (int i = 0; i < REGION_DEPTH; i++) begin
             for (int j = i + 1; j < REGION_DEPTH; j++) begin
@@ -181,9 +174,6 @@ module hrm_region #(
             end
         end
     end
-
-    // 4. LRU victim index is within bounds
-    assert property (@(posedge clk) 1'b1 |-> (victim_index < REGION_DEPTH));
 `endif
 
 endmodule
