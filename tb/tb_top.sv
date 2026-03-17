@@ -28,6 +28,21 @@ module tb_top;
     logic [31:0] perf_bank_conflicts;
     logic [31:0] perf_router_stalls;
 
+    // Debug Observability Signals (for connection and waveform)
+    logic [2:0]                      dbg_ric_state;
+    logic [4:0]                      dbg_fifo_count;
+    logic [3:0]                      dbg_credit_counter;
+    logic [$clog2(NUM_REGIONS)-1:0]  dbg_selected_region;
+    logic [6:0]                      dbg_occupancy [0:NUM_REGIONS-1];
+    logic [31:0]                     dbg_bank_conflicts [0:NUM_REGIONS-1];
+    logic [1:0]                      dbg_router_grant_port;
+    logic                            dbg_router_active_vc;
+
+    logic [NUM_REGIONS-1:0]          dbg_access_stall;
+    logic [NUM_REGIONS-1:0]          dbg_response_valid;
+    logic [NUM_REGIONS-1:0]          dbg_region_hit;
+    logic [NUM_REGIONS-1:0]          dbg_region_miss;
+
     // ==================================================
     // Local state (Scoreboard & Metrics)
     // ==================================================
@@ -84,7 +99,20 @@ module tb_top;
         .perf_promo(perf_promo),
         .perf_demo(perf_demo),
         .perf_bank_conflicts(perf_bank_conflicts),
-        .perf_router_stalls(perf_router_stalls)
+        .perf_router_stalls(perf_router_stalls),
+        // Debug Connections
+        .dbg_ric_state(dbg_ric_state),
+        .dbg_fifo_count(dbg_fifo_count),
+        .dbg_credit_counter(dbg_credit_counter),
+        .dbg_selected_region(dbg_selected_region),
+        .dbg_occupancy(dbg_occupancy),
+        .dbg_bank_conflicts(dbg_bank_conflicts),
+        .dbg_router_grant_port(dbg_router_grant_port),
+        .dbg_router_active_vc(dbg_router_active_vc),
+        .dbg_access_stall(dbg_access_stall),
+        .dbg_response_valid(dbg_response_valid),
+        .dbg_region_hit(dbg_region_hit),
+        .dbg_region_miss(dbg_region_miss)
     );
 
     // ==================================================
@@ -121,7 +149,7 @@ module tb_top;
                 end
 
                 for (int r=0; r<NUM_REGIONS; r++) begin
-                    if (!dut.gen_regions[r].i_hrm.access_stall) begin
+                    if (!dbg_access_stall[r]) begin
                         if (sb_fifo_count[r] < FIFO_DEPTH) begin
                             sb_fifo[r][sb_fifo_wr_ptr[r]].page_id      <= dut.synth_access_id;
                             sb_fifo[r][sb_fifo_wr_ptr[r]].expected_hit <= current_hit;
@@ -175,7 +203,7 @@ module tb_top;
             
             // 5. Validate at Response Time (Per Region)
             for (int r=0; r<NUM_REGIONS; r++) begin
-                if (dut.gen_regions[r].i_hrm.response_valid) begin
+                if (dbg_response_valid[r]) begin
                     if (sb_fifo_count[r] > 0) begin
                         automatic sb_req_t req = sb_fifo[r][sb_fifo_rd_ptr[r]];
                         automatic logic actual_hit = perf_hit[r];

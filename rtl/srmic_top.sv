@@ -33,11 +33,17 @@ module srmic_top #(
     output logic [2:0]                      dbg_ric_state,
     output logic [4:0]                      dbg_fifo_count,
     output logic [3:0]                      dbg_credit_counter,
-    output logic [1:0]                      dbg_selected_region,
-    output logic [6:0]                      dbg_occupancy [0:3],
-    output logic [31:0]                     dbg_bank_conflicts [0:3],
+    output logic [$clog2(NUM_REGIONS)-1:0]  dbg_selected_region,
+    output logic [6:0]                      dbg_occupancy [0:NUM_REGIONS-1],
+    output logic [31:0]                     dbg_bank_conflicts [0:NUM_REGIONS-1],
     output logic [1:0]                      dbg_router_grant_port,
-    output logic                            dbg_router_active_vc
+    output logic                            dbg_router_active_vc,
+
+    // Extended Debug Observability for Testbench
+    output logic [NUM_REGIONS-1:0]          dbg_access_stall,
+    output logic [NUM_REGIONS-1:0]          dbg_response_valid,
+    output logic [NUM_REGIONS-1:0]          dbg_region_hit,
+    output logic [NUM_REGIONS-1:0]          dbg_region_miss
 );
 
     // ==================================================
@@ -63,8 +69,6 @@ module srmic_top #(
 
     // Dummy Wires to capture unconnected outputs
     logic [PAGE_ID_WIDTH-1:0]               dummy_demote_page_id [0:NUM_REGIONS-1];
-    logic [NUM_REGIONS-1:0]                 dummy_access_stall;
-    logic [NUM_REGIONS-1:0]                 dummy_response_valid;
     logic [3:0]                             dummy_in_credit_ret;
     logic [3:0]                             dummy_out_valid;
     logic [FLIT_WIDTH-1:0]                  dummy_out_flit [0:3];
@@ -165,13 +169,15 @@ module srmic_top #(
                 .demote_page_id(dummy_demote_page_id[i]),
                 .access_valid(synth_access_valid), 
                 .access_page_id(synth_access_id),
-                .access_stall(dummy_access_stall[i]),
-                .response_valid(dummy_response_valid[i]),
+                .access_stall(dbg_access_stall[i]),
+                .response_valid(dbg_response_valid[i]),
                 .hit(hrm_hit[i]),
                 .miss(hrm_miss[i]),
                 .region_full(region_full[i]),
                 .bank_conflict_count(hrm_bank_conflicts[i])
             );
+            assign dbg_region_hit[i]  = hrm_hit[i];
+            assign dbg_region_miss[i] = hrm_miss[i];
         end
     endgenerate
 
