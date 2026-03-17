@@ -158,9 +158,9 @@ module tb_top;
         if (!rst_n) begin
             scoreboard_errors = 0;
             for (int r=0; r<NUM_REGIONS; r++) begin
-                sb_fifo_wr_ptr[r]    <= 0;
-                sb_fifo_rd_ptr[r]    <= 0;
-                sb_fifo_count[r]     <= 0;
+                sb_fifo_wr_ptr[r]    = 0;
+                sb_fifo_rd_ptr[r]    = 0;
+                sb_fifo_count[r]     = 0;
             end
             for (int i=0; i<SCOREBOARD_SIZE; i++) begin
                 sb_state[i]          = NOT_RESIDENT;
@@ -184,12 +184,18 @@ module tb_top;
 
             // 2. Prediction at time of access issue (T0)
             // Access is broadcast to all regions; each determines its own expected_hit locally.
+            // Note: In Verilator, hierarchical references to registers inside modules 
+            // might show the updated value. We use $past(dbg_access_stall) to be safe 
+            // if we need to align with the start of the cycle, but since it's combinational 
+            // in HRM, we use it directly. 
             if (dut.synth_access_valid) begin
                 for (int r=0; r<NUM_REGIONS; r++) begin
                     if (!dbg_access_stall[r]) begin
                         automatic logic expected_hit_r = 1'b0;
                         for (int i=0; i<SCOREBOARD_SIZE; i++) begin
                             // A hit occurs in region 'r' only if the page is architecturally resident.
+                            // PROMOTION_PENDING is NOT resident.
+                            // DEMOTION_PENDING IS still resident until the demotion clears.
                             if ((sb_state[i] == RESIDENT || sb_state[i] == DEMOTION_PENDING) && 
                                 (sb_resident_pages[i] == dut.synth_access_id) &&
                                 (sb_region[i] == r[$clog2(NUM_REGIONS)-1:0])) begin
@@ -198,10 +204,10 @@ module tb_top;
                         end
 
                         if (sb_fifo_count[r] < FIFO_DEPTH) begin
-                            sb_fifo[r][sb_fifo_wr_ptr[r]].page_id      <= dut.synth_access_id;
-                            sb_fifo[r][sb_fifo_wr_ptr[r]].expected_hit <= expected_hit_r;
-                            sb_fifo_wr_ptr[r] <= (sb_fifo_wr_ptr[r] + 1) % FIFO_DEPTH;
-                            sb_fifo_count[r]  <= sb_fifo_count[r] + 1;
+                            sb_fifo[r][sb_fifo_wr_ptr[r]].page_id      = dut.synth_access_id;
+                            sb_fifo[r][sb_fifo_wr_ptr[r]].expected_hit = expected_hit_r;
+                            sb_fifo_wr_ptr[r] = (sb_fifo_wr_ptr[r] + 1) % FIFO_DEPTH;
+                            sb_fifo_count[r]  = sb_fifo_count[r] + 1;
                         end else begin
                             $error("[%0t] SB_FIFO_OVERFLOW (Region %0d): Increase FIFO_DEPTH", $time, r);
                             scoreboard_errors = scoreboard_errors + 1;
@@ -317,15 +323,16 @@ module tb_top;
                             $display("DUT region %0d state: last_access=0x%h last_hit=%0d last_miss=%0d last_promo=0x%h last_demo=0x%h",
                                      r, dbg_last_access_page_id[r], dbg_last_hit[r], dbg_last_miss[r], 
                                      dbg_last_promoted_page[r], dbg_last_demoted_page[r]);
-                            scoreboard_errors++;
+                            scoreboard_errors = scoreboard_errors + 1;
                             $fatal("SB_MISMATCH triage triggered");
                         end
                         
-                        sb_fifo_rd_ptr[r] <= (sb_fifo_rd_ptr[r] + 1) % FIFO_DEPTH;
-                        sb_fifo_count[r]  <= sb_fifo_count[r] - 1;
+                        sb_fifo_rd_ptr[r] = (sb_fifo_rd_ptr[r] + 1) % FIFO_DEPTH;
+                        sb_fifo_count[r]  = sb_fifo_count[r] - 1;
                     end else begin
                         $error("[%0t] SB_UNEXPECTED_RESPONSE (Region %0d): No pending request in FIFO", $time, r);
-                        scoreboard_errors++;
+                        scoreboard_errors = scoreboard_errors + 1;
+                        $fatal("SB_UNEXPECTED_RESPONSE triage triggered");
                     end
                 end
             end
