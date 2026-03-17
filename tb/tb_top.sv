@@ -43,6 +43,14 @@ module tb_top;
     logic [NUM_REGIONS-1:0]          dbg_region_hit;
     logic [NUM_REGIONS-1:0]          dbg_region_miss;
 
+    // Region-local promotion commit signals (captured via hierarchical paths)
+    logic [NUM_REGIONS-1:0] hrm_promote_ack_internal;
+    generate
+        for (genvar r=0; r<NUM_REGIONS; r++) begin : gen_promo_ack
+            assign hrm_promote_ack_internal[r] = dut.gen_regions[r].i_hrm.promote_ack;
+        end
+    endgenerate
+
     // ==================================================
     // Local state (Scoreboard & Metrics)
     // ==================================================
@@ -169,18 +177,18 @@ module tb_top;
                 end
             end
 
-            // 2. Residency State Machine Updates
+            // 2. Residency State Machine Updates (Aging and Demotion Commit)
             for (int i=0; i<SCOREBOARD_SIZE; i++) begin
-                if (sb_timer[i] > 1) begin
-                    sb_timer[i] <= sb_timer[i] - 1;
-                end else if (sb_timer[i] == 1) begin
+                if (sb_timer[i] > 0) sb_timer[i] <= sb_timer[i] - 1;
+                
+                // Demotion transition is timer-based (1 cycle)
+                if (sb_state[i] == DEMOTION_PENDING && sb_timer[i] == 1) begin
+                    sb_state[i] <= NOT_RESIDENT;
                     sb_timer[i] <= 0;
-                    if (sb_state[i] == PROMOTION_PENDING) sb_state[i] <= RESIDENT;
-                    if (sb_state[i] == DEMOTION_PENDING)  sb_state[i] <= NOT_RESIDENT;
                 end
             end
 
-            // 3. Handle Promotions (4 cycle latency)
+            // 3. Handle Promotion Issue (T0)
             if (perf_promo) begin
                 automatic int found = -1;
                 for (int i=0; i<SCOREBOARD_SIZE; i++) begin
@@ -193,16 +201,37 @@ module tb_top;
                 
                 sb_state[found]          <= PROMOTION_PENDING;
                 sb_resident_pages[found] <= dut.promote_page_id;
-                sb_region[found]         <= dbg_selected_region;
+                // Region ownership is NOT assigned yet; wait for commit (T4).
                 sb_timer[found]          <= 4;
             end
 
-            // 4. Handle Demotions (1 cycle latency)
+            // 4. Handle Promotion Commit (T4 - Region Ownership Assigned)
+            for (int r=0; r<NUM_REGIONS; r++) begin
+                if (hrm_promote_ack_internal[r]) begin
+                    automatic logic found_pending = 1'b0;
+                    for (int i=0; i<SCOREBOARD_SIZE; i++) begin
+                        // Find the oldest pending promotion that is ready to commit
+                        if (sb_state[i] == PROMOTION_PENDING && sb_timer[i] <= 1) begin
+                            sb_state[i]  <= RESIDENT;
+                            sb_region[i] <= r[$clog2(NUM_REGIONS)-1:0];
+                            sb_timer[i]  <= 0;
+                            found_pending = 1'b1;
+                            break;
+                        end
+                    end
+                    if (!found_pending) begin
+                        $error("[%0t] SB_ERROR: Promotion ack for region %0d but no pending promo found in scoreboard", $time, r);
+                        scoreboard_errors++;
+                    end
+                end
+            end
+
+            // 5. Handle Demotions (1 cycle latency)
             if (perf_demo) begin
                 for (int i=0; i<SCOREBOARD_SIZE; i++) begin
-                    if (sb_state[i] != NOT_RESIDENT && sb_resident_pages[i] == dut.demote_page_id) begin
-                        // Note: In current RIC/HRM, demotion is region-specific based on target_region.
-                        // Scoreboard entry is only demoted if it matches the demoted page.
+                    if (sb_state[i] != NOT_RESIDENT && 
+                        sb_resident_pages[i] == dut.demote_page_id &&
+                        sb_region[i] == dbg_selected_region) begin 
                         sb_state[i] <= DEMOTION_PENDING;
                         sb_timer[i] <= 1;
                         break;
@@ -210,7 +239,7 @@ module tb_top;
                 end
             end
             
-            // 5. Validate at Response Time (Per Region)
+            // 6. Validate at Response Time (Per Region)
             for (int r=0; r<NUM_REGIONS; r++) begin
                 if (dbg_response_valid[r]) begin
                     if (sb_fifo_count[r] > 0) begin
