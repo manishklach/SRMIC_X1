@@ -14,12 +14,10 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Install Dependencies (Verilator, Icarus, Yosys, SymbiYosys)
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y verilator iverilog yosys
-        # Minimal SymbiYosys install
-        sudo apt-get install -y sby boolector
+    - name: Setup OSS CAD Suite
+      uses: YosysHQ/setup-oss-cad-suite@v3
+      with:
+          python-override: true
 
     - name: Run Verilator Lint
       run: make lint
