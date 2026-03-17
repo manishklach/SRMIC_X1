@@ -53,7 +53,7 @@ module srmesh_router #(
 
     // Latency Pipeline
     logic [3:0]                             pipe_out_valid;
-    logic [FLIT_WIDTH-1:0]                  pipe_out_flit [0:3];
+    logic [4*FLIT_WIDTH-1:0]                pipe_out_flit;
     logic [3:0]                             pipe_out_vc_id;
 
     // ==================================================
@@ -145,7 +145,7 @@ module srmesh_router #(
         end else begin
             // Latency Pipeline
             out_valid <= pipe_out_valid;
-            out_flit  <= pipe_out_flit;
+            out_flit  <= pipe_out_flit;  // packed -> packed, direct assign
             out_vc_id <= pipe_out_vc_id;
 
             pipe_out_valid <= 0;
@@ -169,7 +169,7 @@ module srmesh_router #(
 
             // Process Grant
             if (found_grant) begin
-                pipe_out_flit[dest]              <= vc_buf[sel_port][sel_vc];
+                pipe_out_flit[dest*FLIT_WIDTH +: FLIT_WIDTH] <= vc_buf[sel_port][sel_vc];
                 pipe_out_valid[dest]             <= 1'b1;
                 pipe_out_vc_id[dest]             <= sel_vc;
                 credits[dest][sel_vc]            <= credits[dest][sel_vc] - 1;
