@@ -234,9 +234,13 @@ module tb_top;
                             break;
                         end
                     end
-                    if (!found_it)
+                    if (!found_it) begin
                         $display("[%0d] SB_WARN: promote_ack r=%0d page=0x%h no match",
                                  total_cycles, r, committed_page);
+                    end else if (committed_page == DEBUG_PAGE) begin
+                        $display("[%0d] COMMIT_TRACE page=0x%h region=%0d -> RESIDENT",
+                                 total_cycles, committed_page, r);
+                    end
                 end
             end
 
@@ -266,8 +270,10 @@ module tb_top;
                 sb_resident_pages[found] = dut.promote_page_id;
                 sb_region[found]         = promote_target_region_wire;
                 sb_timer[found]          = 4;
-                if (total_cycles > 3600 && total_cycles < 3900)
-                    $display("[%0d] PROMO_TRACE page=0x%h region=%0d", total_cycles, dut.promote_page_id, promote_target_region_wire);
+                // Always trace 0x000a promotions; also trace all in failure window
+                if (dut.promote_page_id == DEBUG_PAGE || (total_cycles > 3600 && total_cycles < 3900))
+                    $display("[%0d] PROMO_TRACE page=0x%h region=%0d",
+                             total_cycles, dut.promote_page_id, promote_target_region_wire);
                 if (DEBUG_VERBOSE && dut.promote_page_id==DEBUG_PAGE)
                     $display("[%0d] TRACE page=0x%h event=PROMOTION_ISSUED region=%0d",
                              total_cycles, dut.promote_page_id, dut.promote_region_id);
@@ -277,6 +283,9 @@ module tb_top;
             // STEP 6: Demotion issued
             // ----------------------------------------------------------
             if (perf_demo) begin
+                if (total_cycles > 3600 && total_cycles < 3900)
+                    $display("[%0d] DEMO_TRACE page=0x%h region=%0d",
+                             total_cycles, dut.demote_page_id, promote_target_region_wire);
                 for (int i=0; i<SCOREBOARD_SIZE; i++) begin
                     if (sb_state[i]==RESIDENT &&
                         sb_resident_pages[i]==dut.demote_page_id &&
