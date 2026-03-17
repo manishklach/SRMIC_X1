@@ -69,11 +69,13 @@ module srmesh_router #(
     logic [1:0]                             sel_port;
     logic                                   sel_vc;
     logic                                   found_grant;
+    logic                                   preferred_vc;
 
     always_comb begin
         found_grant = 1'b0;
         sel_port    = 0;
         sel_vc      = 0;
+        preferred_vc = 0;
         
         for (int i = 0; i < 4; i++) begin
             logic [1:0] p = port_rr + i[1:0];
@@ -88,7 +90,7 @@ module srmesh_router #(
             if (found_grant) break;
 
             // Priority 2: WRR Arbitration
-            logic preferred_vc = (wrr_state[p] < VC0_WEIGHT) ? 1'b0 : 1'b1;
+            preferred_vc = (wrr_state[p] < VC0_WEIGHT) ? 1'b0 : 1'b1;
             if (vc_full[p][preferred_vc]) begin
                 logic [1:0] dest = get_route(vc_buf[p][preferred_vc]);
                 if (credits[dest][preferred_vc] > 0) begin
@@ -179,7 +181,9 @@ module srmesh_router #(
             assert property (@(posedge clk) credits[p][0] <= MAX_CREDITS);
             assert property (@(posedge clk) credits[p][1] <= MAX_CREDITS);
             assert property (@(posedge clk) (pipe_out_valid[p] && pipe_out_vc_id[p] == 0) |-> (credits[p][0] > 0));
+`ifndef VERILATOR
             assert property (@(posedge clk) vc_full[p][0] |-> ##[1:40] !vc_full[p][0]); 
+`endif
         end
     endgenerate
 `endif
