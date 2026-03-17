@@ -156,17 +156,17 @@ module tb_top;
     // ==================================================
     always_ff @(posedge clk) begin
         if (!rst_n) begin
-            scoreboard_errors <= 0;
+            scoreboard_errors = 0;
             for (int r=0; r<NUM_REGIONS; r++) begin
                 sb_fifo_wr_ptr[r]    <= 0;
                 sb_fifo_rd_ptr[r]    <= 0;
                 sb_fifo_count[r]     <= 0;
             end
             for (int i=0; i<SCOREBOARD_SIZE; i++) begin
-                sb_state[i]          <= NOT_RESIDENT;
-                sb_resident_pages[i] <= 0;
-                sb_region[i]         <= 0;
-                sb_timer[i]          <= 0;
+                sb_state[i]          = NOT_RESIDENT;
+                sb_resident_pages[i] = 0;
+                sb_region[i]         = 0;
+                sb_timer[i]          = 0;
             end
         end else begin
             // 1. Duplicate Residency Detection
@@ -204,7 +204,7 @@ module tb_top;
                             sb_fifo_count[r]  <= sb_fifo_count[r] + 1;
                         end else begin
                             $error("[%0t] SB_FIFO_OVERFLOW (Region %0d): Increase FIFO_DEPTH", $time, r);
-                            scoreboard_errors++;
+                            scoreboard_errors = scoreboard_errors + 1;
                         end
 
                         if (DEBUG_VERBOSE && dut.synth_access_id == DEBUG_PAGE) begin
@@ -220,7 +220,7 @@ module tb_top;
 
             // 3. Residency State Machine Updates (Aging and Demotion Commit)
             for (int i=0; i<SCOREBOARD_SIZE; i++) begin
-                if (sb_timer[i] > 0) sb_timer[i] <= sb_timer[i] - 1;
+                if (sb_timer[i] > 0) sb_timer[i] = sb_timer[i] - 1;
                 
                 // Demotion transition is timer-based (1 cycle)
                 if (sb_state[i] == DEMOTION_PENDING && sb_timer[i] == 1) begin
@@ -228,8 +228,8 @@ module tb_top;
                         $display("[%0d] TRACE page=0x%h event=DEMOTION_COMPLETED region=%0d", 
                                  total_cycles, sb_resident_pages[i], sb_region[i]);
                     end
-                    sb_state[i] <= NOT_RESIDENT;
-                    sb_timer[i] <= 0;
+                    sb_state[i] = NOT_RESIDENT;
+                    sb_timer[i] = 0;
                 end
             end
 
@@ -244,9 +244,9 @@ module tb_top;
                 end
                 if (found == -1) found = total_promos % SCOREBOARD_SIZE;
                 
-                sb_state[found]          <= PROMOTION_PENDING;
-                sb_resident_pages[found] <= dut.promote_page_id;
-                sb_timer[found]          <= 4;
+                sb_state[found]          = PROMOTION_PENDING;
+                sb_resident_pages[found] = dut.promote_page_id;
+                sb_timer[found]          = 4;
 
                 if (DEBUG_VERBOSE && dut.promote_page_id == DEBUG_PAGE) begin
                     $display("[%0d] TRACE page=0x%h event=PROMOTION_ISSUED entry=%0d", 
@@ -260,9 +260,9 @@ module tb_top;
                     automatic logic found_pending = 1'b0;
                     for (int i=0; i<SCOREBOARD_SIZE; i++) begin
                         if (sb_state[i] == PROMOTION_PENDING && sb_timer[i] <= 1) begin
-                            sb_state[i]  <= RESIDENT;
-                            sb_region[i] <= r[$clog2(NUM_REGIONS)-1:0];
-                            sb_timer[i]  <= 0;
+                            sb_state[i]  = RESIDENT;
+                            sb_region[i] = r[$clog2(NUM_REGIONS)-1:0];
+                            sb_timer[i]  = 0;
                             found_pending = 1'b1;
                             if (DEBUG_VERBOSE && sb_resident_pages[i] == DEBUG_PAGE) begin
                                 $display("[%0d] TRACE page=0x%h event=PROMOTION_COMMITTED region=%0d", 
@@ -273,7 +273,7 @@ module tb_top;
                     end
                     if (!found_pending) begin
                         $error("[%0t] SB_ERROR: Promotion ack for region %0d but no pending promo found in scoreboard", $time, r);
-                        scoreboard_errors++;
+                        scoreboard_errors = scoreboard_errors + 1;
                     end
                 end
             end
@@ -288,8 +288,8 @@ module tb_top;
                             $display("[%0d] TRACE page=0x%h event=DEMOTION_ISSUED region=%0d", 
                                      total_cycles, sb_resident_pages[i], sb_region[i]);
                         end
-                        sb_state[i] <= DEMOTION_PENDING;
-                        sb_timer[i] <= 1;
+                        sb_state[i] = DEMOTION_PENDING;
+                        sb_timer[i] = 1;
                         break;
                     end
                 end
