@@ -82,8 +82,8 @@ module srmic_top #(
     logic [NUM_REGIONS-1:0]                 hrm_miss;
     logic [31:0]                            hrm_bank_conflicts [0:NUM_REGIONS-1];
 
-    // Dummy Wires to capture unconnected outputs
-    logic [PAGE_ID_WIDTH-1:0]               dummy_demote_page_id [0:NUM_REGIONS-1];
+    // Real demote page IDs from HRM regions
+    logic [PAGE_ID_WIDTH-1:0]               hrm_demote_page_id [0:NUM_REGIONS-1];
     logic [3:0]                             dummy_in_credit_ret;
     logic [3:0]                             dummy_out_valid;
     logic [FLIT_WIDTH-1:0]                  dummy_out_flit [0:3];
@@ -163,7 +163,7 @@ module srmic_top #(
         .promote_page_id(promote_page_id),
         .promote_region_id(promote_region_id),
         .demote_valid(demote_valid),
-        .demote_page_id(demote_page_id),
+        .demote_page_id(), // Overridden by hrm_demote_page_id mux below
         .region_demote_ack(region_demote_ack),
         .dbg_state(dbg_ric_state),
         .dbg_fifo_count(dbg_fifo_count),
@@ -186,7 +186,7 @@ module srmic_top #(
                 .promote_ack(hrm_promote_ack[i]),
                 .demote_request(demote_valid && (dbg_selected_region == i)),
                 .demote_ack(hrm_demote_ack[i]),
-                .demote_page_id(dummy_demote_page_id[i]),
+                .demote_page_id(hrm_demote_page_id[i]),
                 .access_valid(synth_access_valid), 
                 .access_page_id(synth_access_id),
                 .access_stall(dbg_access_stall[i]),
@@ -207,6 +207,16 @@ module srmic_top #(
     endgenerate
 
     assign region_demote_ack = hrm_demote_ack;
+
+    // Override RIC demote_page_id with actual evicted page from target HRM region
+    // The RIC outputs 0xDEAD as placeholder; this mux provides the real value.
+    always_comb begin
+        demote_page_id = 16'hDEAD; // default
+        for (int i = 0; i < NUM_REGIONS; i++) begin
+            if (demote_valid && (promote_region_id == i))
+                demote_page_id = hrm_demote_page_id[i];
+        end
+    end
 
     // Wire committed page per region from HRM pipeline
     generate

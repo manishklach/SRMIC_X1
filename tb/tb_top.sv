@@ -282,8 +282,11 @@ module tb_top;
             // ----------------------------------------------------------
             // STEP 6: Demotion issued
             // ----------------------------------------------------------
+            // FIX: dut.demote_page_id now correctly reflects the actual
+            // evicted page from the target HRM region (via hrm_demote_page_id mux).
+            // Previously was hardcoded 0xDEAD in ric.sv.
             if (perf_demo) begin
-                if (total_cycles > 3600 && total_cycles < 3900)
+                if (DEBUG_VERBOSE && total_cycles > 3600 && total_cycles < 3900)
                     $display("[%0d] DEMO_TRACE page=0x%h region=%0d",
                              total_cycles, dut.demote_page_id, promote_target_region_wire);
                 for (int i=0; i<SCOREBOARD_SIZE; i++) begin
@@ -292,6 +295,9 @@ module tb_top;
                         sb_region[i]==promote_target_region_wire) begin
                         sb_state[i] = DEMOTION_PENDING;
                         sb_timer[i] = 1;
+                        if (DEBUG_VERBOSE && dut.demote_page_id==DEBUG_PAGE)
+                            $display("[%0d] TRACE page=0x%h event=DEMOTION_ISSUED region=%0d",
+                                     total_cycles, dut.demote_page_id, promote_target_region_wire);
                         break;
                     end
                 end
