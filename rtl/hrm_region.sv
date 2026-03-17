@@ -54,6 +54,9 @@ module hrm_region #(
     // Latency Modeling Pipelines
     logic [5:0]                             hit_pipe, miss_pipe;
     logic [3:0]                             promo_ack_pipe;
+    logic [PAGE_ID_WIDTH-1:0]               promote_page_id_pipe [0:3];
+    logic [$clog2(REGION_DEPTH)-1:0]        victim_index_pipe [0:3];
+    logic [$clog2(REGION_DEPTH)-1:0]        demote_victim_index_reg;
 
     // ==================================================
     // Combinational Logic
@@ -121,13 +124,25 @@ module hrm_region #(
             miss                <= 0;
             promote_ack         <= 0;
             bank_conflict_count <= 0;
+            for (int i = 0; i < 4; i++) begin
+                promote_page_id_pipe[i] <= 0;
+                victim_index_pipe[i]    <= 0;
+            end
         end else begin
             if (access_stall) bank_conflict_count <= bank_conflict_count + 1;
 
             // Shift registers for latency
             hit_pipe       <= {hit_pipe[4:0], (access_valid && !access_stall && hit_comb)};
             miss_pipe      <= {miss_pipe[4:0], (access_valid && !access_stall && !hit_comb)};
+            
+            // Promotion Metadata Pipeline
             promo_ack_pipe <= {promo_ack_pipe[2:0], promote_valid};
+            promote_page_id_pipe[0] <= promote_page_id;
+            victim_index_pipe[0]    <= victim_index;
+            for (int i = 1; i < 4; i++) begin
+                promote_page_id_pipe[i] <= promote_page_id_pipe[i-1];
+                victim_index_pipe[i]    <= victim_index_pipe[i-1];
+            end
 
             // Pipeline Outputs
             hit            <= hit_pipe[1];   // 2 cycles
@@ -139,8 +154,9 @@ module hrm_region #(
 
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            valid_array <= 0;
-            demote_ack  <= 0;
+            valid_array             <= 0;
+            demote_ack              <= 0;
+            demote_victim_index_reg <= 0;
             for (int i = 0; i < REGION_DEPTH; i++) begin
                 tag_array[i]    <= 0;
                 lru_counters[i] <= 0;
@@ -158,18 +174,24 @@ module hrm_region #(
                 end
             end
 
-            // Apply Promotion at end of pipeline
+            // Apply Promotion at end of pipeline using captured metadata
             if (promo_ack_pipe[3]) begin
-                tag_array[victim_index]    <= promote_page_id; 
-                valid_array[victim_index]  <= 1'b1;
-                lru_counters[victim_index] <= 3'd0;
+                tag_array[victim_index_pipe[3]]    <= promote_page_id_pipe[3]; 
+                valid_array[victim_index_pipe[3]]  <= 1'b1;
+                lru_counters[victim_index_pipe[3]] <= 3'd0;
                 for (int i = 0; i < REGION_DEPTH; i++) begin
-                    if (i != {{(32-$clog2(REGION_DEPTH)){1'b0}}, victim_index} && valid_array[i]) begin
+                    if (i != {{(32-$clog2(REGION_DEPTH)){1'b0}}, victim_index_pipe[3]} && valid_array[i]) begin
                         if (lru_counters[i] < 3'd7) lru_counters[i] <= lru_counters[i] + 1;
                     end
                 end
             end
 
+            // Demotion captures victim index at request time
+            if (demote_request) begin
+                demote_victim_index_reg <= victim_index;
+            end
+
+            // Invalidation happens 1 cycle after request (sync with demote_ack)
             if (demote_request) begin
                 valid_array[victim_index] <= 1'b0;
                 demote_ack                <= 1'b1;
@@ -188,6 +210,12 @@ module hrm_region #(
         if (rst_n) begin
             assert (victim_index < REGION_DEPTH)
                 else $fatal("HRM victim_index out of bounds");
+            
+            // New Assertion: Promotion commit integrity
+            if (promo_ack_pipe[3]) begin
+                assert (tag_array[victim_index_pipe[3]] == promote_page_id_pipe[3])
+                    else $error("HRM_PROMO_ERROR: Tag mismatch at commit time");
+            end
         end
     end
     
