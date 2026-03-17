@@ -109,18 +109,17 @@ module hrm_region #(
     end
 
     // Victim Selection (LRU)
+    // Note: break not supported by Yosys; use priority-encoded found flag instead
     always_comb begin
         victim_index = 0;
         for (int i = 1; i < REGION_DEPTH; i++) begin
             if (lru_counters[i] > lru_counters[victim_index])
                 victim_index = i[$clog2(REGION_DEPTH)-1:0];
         end
-        // Invalidate priority
-        for (int i = 0; i < REGION_DEPTH; i++) begin
-            if (!valid_array[i]) begin
+        // Invalidate priority: prefer first invalid slot (lowest index wins)
+        for (int i = REGION_DEPTH-1; i >= 0; i--) begin
+            if (!valid_array[i])
                 victim_index = i[$clog2(REGION_DEPTH)-1:0];
-                break;
-            end
         end
     end
 

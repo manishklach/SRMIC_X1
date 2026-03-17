@@ -83,40 +83,42 @@ module srmesh_router #(
         preferred_vc = 0;
         dest        = 0;
         
+        // Note: break not supported by Yosys.
+        // Use found_grant as guard to preserve first-grant priority semantics.
         for (int i = 0; i < 4; i++) begin
             logic [1:0] p;
             p = port_rr + i[1:0];
-            
-            // Priority 1: Starvation Watchdog
-            if (vc_full[p][0] && (starvation_cnt[p][0] > 16)) begin
-                sel_port = p; sel_vc = 0; found_grant = 1'b1;
-                dest = get_route(vc_buf[p][0]);
-            end else if (vc_full[p][1] && (starvation_cnt[p][1] > 16)) begin
-                sel_port = p; sel_vc = 1; found_grant = 1'b1;
-                dest = get_route(vc_buf[p][1]);
-            end
 
-            if (found_grant) break;
-
-            // Priority 2: WRR Arbitration
-            preferred_vc = (wrr_state[p] < VC0_WEIGHT) ? 1'b0 : 1'b1;
-            if (vc_full[p][preferred_vc]) begin
-                logic [1:0] d;
-                d = get_route(vc_buf[p][preferred_vc]);
-                if (credits[d][preferred_vc] > 0) begin
-                    sel_port = p; sel_vc = preferred_vc; found_grant = 1'b1;
-                    dest = d;
-                end
-            end else if (vc_full[p][!preferred_vc]) begin
-                logic [1:0] d;
-                d = get_route(vc_buf[p][!preferred_vc]);
-                if (credits[d][!preferred_vc] > 0) begin
-                    sel_port = p; sel_vc = !preferred_vc; found_grant = 1'b1;
-                    dest = d;
+            if (!found_grant) begin
+                // Priority 1: Starvation Watchdog
+                if (vc_full[p][0] && (starvation_cnt[p][0] > 16)) begin
+                    sel_port = p; sel_vc = 0; found_grant = 1'b1;
+                    dest = get_route(vc_buf[p][0]);
+                end else if (vc_full[p][1] && (starvation_cnt[p][1] > 16)) begin
+                    sel_port = p; sel_vc = 1; found_grant = 1'b1;
+                    dest = get_route(vc_buf[p][1]);
                 end
             end
-            
-            if (found_grant) break;
+
+            if (!found_grant) begin
+                // Priority 2: WRR Arbitration
+                preferred_vc = (wrr_state[p] < VC0_WEIGHT) ? 1'b0 : 1'b1;
+                if (vc_full[p][preferred_vc]) begin
+                    logic [1:0] d;
+                    d = get_route(vc_buf[p][preferred_vc]);
+                    if (credits[d][preferred_vc] > 0) begin
+                        sel_port = p; sel_vc = preferred_vc; found_grant = 1'b1;
+                        dest = d;
+                    end
+                end else if (vc_full[p][!preferred_vc]) begin
+                    logic [1:0] d;
+                    d = get_route(vc_buf[p][!preferred_vc]);
+                    if (credits[d][!preferred_vc] > 0) begin
+                        sel_port = p; sel_vc = !preferred_vc; found_grant = 1'b1;
+                        dest = d;
+                    end
+                end
+            end
         end
     end
 
