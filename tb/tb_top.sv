@@ -142,7 +142,8 @@ module tb_top;
         .dbg_last_promoted_page(dbg_last_promoted_page),
         .dbg_last_demoted_page(dbg_last_demoted_page),
         .dbg_synth_access_valid(dbg_synth_access_valid),
-        .dbg_synth_access_id(dbg_synth_access_id)
+        .dbg_synth_access_id(dbg_synth_access_id),
+        .promote_target_region(promote_target_region)
     );
 
     // ==================================================
@@ -281,6 +282,7 @@ module tb_top;
                 if (found == -1) found = total_promos % SCOREBOARD_SIZE;
                 sb_state[found]          = PROMOTION_PENDING;
                 sb_resident_pages[found] = dut.promote_page_id;
+                sb_region[found]         = promote_target_region; 
                 sb_timer[found]          = 4;
             end
 

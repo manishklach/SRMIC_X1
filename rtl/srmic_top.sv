@@ -53,7 +53,10 @@ module srmic_top #(
 
     // Traffic Gen Visibility
     output logic                            dbg_synth_access_valid,
-    output logic [PAGE_ID_WIDTH-1:0]        dbg_synth_access_id
+    output logic [PAGE_ID_WIDTH-1:0]        dbg_synth_access_id,
+
+    // Expose promotion target region for testbench
+    output logic [$clog2(NUM_REGIONS)-1:0]  promote_target_region
 );
 
     // ==================================================
@@ -223,5 +226,7 @@ module srmic_top #(
     assign perf_miss  = hrm_miss;
     assign perf_promo = promote_valid;
     assign perf_demo  = demote_valid;
+
+    assign promote_target_region = promote_region_id;
 
 endmodule
