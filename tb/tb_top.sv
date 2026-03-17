@@ -146,8 +146,10 @@ module tb_top;
                     if (!dbg_access_stall[r]) begin
                         automatic logic expected_hit_r = 1'b0;
                         for (int i=0; i<SCOREBOARD_SIZE; i++) begin
-                            // A hit occurs in region 'r' only if the page is resident IN THAT REGION.
-                            if ((sb_state[i] == RESIDENT || (sb_state[i] == PROMOTION_PENDING && sb_timer[i] == 1)) && 
+                            // A hit occurs in region 'r' only if the page is architecturally resident.
+                            // PROMOTION_PENDING is NOT resident.
+                            // DEMOTION_PENDING IS still resident until the demotion clears.
+                            if ((sb_state[i] == RESIDENT || sb_state[i] == DEMOTION_PENDING) && 
                                 (sb_resident_pages[i] == dut.synth_access_id) &&
                                 (sb_region[i] == r[$clog2(NUM_REGIONS)-1:0])) begin
                                 expected_hit_r = 1'b1;
