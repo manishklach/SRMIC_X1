@@ -165,13 +165,16 @@ The SRMIC-X1 architecture has been empirically validated using real LLM weight a
 
 | Model | Model Size | HRM Budget | Hit Rate | Speedup vs HBM |
 |---|---|---|---|---|
+| **OPT-6.7B** | 12.78 GB | 10.0 GB | 33.7% | **1.34×** |
+| **Mistral-7B** | 13.49 GB | 10.0 GB | 24.3% | **1.22×** |
 | **Pythia-1.4B** | 2.63 GB | 4.0 GB | 64.0% | **1.92×** |
 | **OPT-1.3B** | 2.64 GB | 4.0 GB | 66.0% | **1.98×** |
 
 **Key Empirical Insights:**
-- **Physically Validated Acceleration:** Real model weights fetched during autoregressive decode confirm a ~1.9× speedup, nearing the theoretical 2.0× architectural limit.
-- **Regional Hashing Efficiency:** The distributed 64-region HRM successfully absorbs the 100% weight-fetch pressure of dense models.
-- **Optimization Target:** Observed hit rates saturate at ~65% due to regional hash collisions, providing a clear roadmap for next-generation RIC (Residency Intelligence Controller) refinements.
+- **Physically Validated Acceleration:** Real model weights fetched during autoregressive decode confirm meaningful speedup (up to 1.98×) across 1B to 7B model classes.
+- **7B Scaling Behavior:** For 7B models, hit rates are currently limited by distributed hashing thrashing at sub-100% HRM coverage.
+- **Regional Hashing Efficiency:** The distributed 64-region HRM successfully handles the 100% weight-fetch pressure of dense models.
+- **Optimization Target:** Consistent hit rates (~30% at 75% coverage) across 1.4B and 7B models highlight regional hash collisions as the primary target for next-generation RIC (Residency Intelligence Controller) refinements.
 
 See [Runtime Validation Review](docs/RUNTIME_VALIDATION_REVIEW.md) for detailed analysis.
 

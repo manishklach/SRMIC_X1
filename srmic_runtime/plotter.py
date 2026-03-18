@@ -46,7 +46,7 @@ def save_results(df: pd.DataFrame, trace: List[Dict[str, Any]], output_dir: str,
         lname = name.lower()
         if 'attn' in lname or 'self_out' in lname or 'q_proj' in lname or 'k_proj' in lname or 'v_proj' in lname:
             composition['Attention'] += size
-        elif 'mlp' in lname or 'ffn' in lname or 'gate_proj' in lname or 'up_proj' in lname or 'down_proj' in lname:
+        elif 'mlp' in lname or 'ffn' in lname or 'gate_proj' in lname or 'up_proj' in lname or 'down_proj' in lname or 'fc1' in lname or 'fc2' in lname:
             composition['MLP'] += size
         elif 'embed' in lname:
             composition['Embeddings'] += size

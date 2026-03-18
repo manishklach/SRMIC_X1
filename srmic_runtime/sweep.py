@@ -34,7 +34,8 @@ def run_sweep(
     model_kwargs = {
         "torch_dtype": torch.float16,
         "device_map": "cpu", # Use CPU for tracing if GPU is not available/needed
-        "token": hf_token
+        "token": hf_token,
+        "low_cpu_mem_usage": True
     }
     if load_in_8bit:
         model_kwargs["load_in_8bit"] = True
