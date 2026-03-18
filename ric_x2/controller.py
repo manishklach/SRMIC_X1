@@ -42,25 +42,36 @@ class RICX2:
         obj.access_count += 1
         
         # 1. Parallel Residency Check (Base + Replicas)
+        hit_result = None
         if self.occupancy.is_resident(event.object_id, base_rid):
             obj.hit_count += 1
+            hit_result = AccessResult.HIT
+
+        if hit_result is None:
+            for replica_rid in self.replication.get_replica_regions(event.object_id):
+                if self.occupancy.is_resident(event.object_id, replica_rid):
+                    obj.replica_hit_count += 1
+                    self.replication.total_replica_hits += 1
+                    hit_result = AccessResult.HIT_REPLICA
+                    break
+
+        # 2. Replication Logic (X2 only) - Can trigger on hit OR miss
+        if self.x2_mode and self.replication.should_replicate(obj, self.occupancy.regions[base_rid]):
+            target_rid = self.occupancy.get_coldest_region()
+            if target_rid != base_rid:
+                if self.replication.create_replica(event.object_id, target_rid):
+                    self._promote_to_region(event, target_rid)
+
+        if hit_result:
             obj.last_step = event.decode_step
-            return AccessResult.HIT
+            return hit_result
 
-        # Check for replica hits
-        for replica_rid in self.replication.get_replica_regions(event.object_id):
-            if self.occupancy.is_resident(event.object_id, replica_rid):
-                obj.replica_hit_count += 1
-                self.replication.total_replica_hits += 1
-                obj.last_step = event.decode_step
-                return AccessResult.HIT_REPLICA
-
-        # 2. Miss Path - Telemetry
+        # 3. Miss Path - Telemetry
         self.collision.record_attempt(base_rid, event.object_id, self.occupancy.regions[base_rid].resident_objects)
         is_thrash = self.thrash.is_thrashing(event.object_id, event.decode_step, self.cfg.THRASH_WINDOW_STEPS)
         if is_thrash: obj.thrash_count += 1
 
-        # 3. Admission Decision
+        # 4. Admission Decision
         if self.occupancy.regions[base_rid].free_bytes < event.size_bytes:
             if self.occupancy.regions[base_rid].resident_objects:
                 v_id = next(iter(self.occupancy.regions[base_rid].resident_objects))
@@ -68,12 +79,6 @@ class RICX2:
                 if self.x2_mode and self.cfg.ADMISSION_ENABLED:
                     if not self.admission.should_admit(obj, v_obj, self.occupancy.regions[base_rid], event.decode_step):
                         return AccessResult.MISS_BYPASSED
-
-        # 4. Replication Logic (X2 only)
-        if self.x2_mode and self.replication.should_replicate(obj, self.occupancy.regions[base_rid]):
-            target_rid = self.occupancy.get_coldest_region()
-            if self.replication.create_replica(event.object_id, target_rid):
-                self._promote_to_region(event, target_rid)
 
         # 5. Reactive Remap Trigger (X2 only)
         if self.x2_mode and self.occupancy.regions[base_rid].occupancy_fraction > self.cfg.REMAP_OCC_THRESHOLD:

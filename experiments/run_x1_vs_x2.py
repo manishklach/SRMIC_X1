@@ -28,6 +28,24 @@ def generate_hot_trace(steps=100, model_mb=2048):
                     trace.append(TraceEvent(s, f"L{l}_T{t}", tensor_size, l))
     return trace
 
+def generate_unbalanced_trace(steps=100, model_mb=2048):
+    """
+    Synthetic trace with extreme hotspots. 
+    T0 and T1 in each layer are accessed 5x more than others.
+    """
+    trace = []
+    tensor_size = (model_mb * 1024 * 1024) // (32 * 8)
+    for s in range(steps):
+        for l in range(32):
+            for t in range(8):
+                # Standard access
+                trace.append(TraceEvent(s, f"L{l}_T{t}", tensor_size, l))
+                # Extreme hotness for specific tensors to trigger replication
+                if t < 2:
+                    for _ in range(4):
+                        trace.append(TraceEvent(s, f"L{l}_T{t}", tensor_size, l))
+    return trace
+
 def validate_baseline(summary):
     critical_metrics = ['bypass_count', 'remap_count', 'replica_count']
     for m in critical_metrics:
@@ -36,8 +54,14 @@ def validate_baseline(summary):
             sys.exit(1)
 
 def main():
-    cfg = X2SimConfig(REGION_CAPACITY_MB=64)
-    trace = generate_hot_trace()
+    # Force replication to verify mechanism
+    cfg = X2SimConfig(
+        REGION_CAPACITY_MB=64, 
+        HOT_OBJECT_ACCESS_THRESHOLD=1,
+        REPLICATION_PRESSURE_THRESHOLD=0.0,
+        REPLICATION_ENABLED=True
+    )
+    trace = generate_unbalanced_trace()
     print(f"SRMIC-X2 FULL: Running experiment over {len(trace)} events...")
     experiment_results = []
 
