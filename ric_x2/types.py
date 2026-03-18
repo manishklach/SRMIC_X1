@@ -4,9 +4,10 @@ from typing import Dict, Set, Optional
 
 class AccessResult(Enum):
     HIT = 1
-    MISS_PROMOTED = 2
-    MISS_BYPASSED = 3
-    EVICTED = 4
+    HIT_REPLICA = 2
+    MISS_PROMOTED = 3
+    MISS_BYPASSED = 4
+    EVICTED = 5
 
 @dataclass
 class ObjectMetadata:
@@ -15,6 +16,7 @@ class ObjectMetadata:
     size_bytes: int
     access_count: int = 0
     hit_count: int = 0
+    replica_hit_count: int = 0
     last_step: int = -1
     last_evict_step: int = -1
     thrash_count: int = 0
