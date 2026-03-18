@@ -2,6 +2,41 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v2.2.0] - 2026-03-18
+
+### SRMIC-X1: Empirical Scaling Validation (7B Milestone)
+
+This release provides the first empirical evidence of SRMIC-X1 scaling behavior on deployment-relevant 7B class models.
+
+### Added
+- **Mistral-7B Validation**: Full autoregressive decode trace for `Mistral-7B-v0.1`, demonstrating a **1.22x speedup** even with sub-optimal coverage.
+- **OPT-6.7B Validation**: Tracing results for `OPT-6.7B`, showing a **1.34x speedup** and confirming consistent architectural response across model architectures.
+- **Multi-Model Comparison**: Added automated study utility (`studies/runtime/run_study.py`) to generate cross-model speedup tables.
+- **Scaling Analysis**: Comprehensive documentation of regional hash collision scaling in `docs/RUNTIME_VALIDATION_REVIEW.md`.
+
+### Changed
+- **Plotter Optimization**: Enhanced `srmic_runtime/plotter.py` to support diverse MLP naming conventions (FC1/FC2) used in OPT and other model families.
+- **README Elevation**: Integrated empirical performance benchmarks into the main repository documentation.
+
+### Fixed
+- **Tracer Accuracy**: Hardened `WeightAccessTracer` to use `model.generate()` with KV-cache awareness, correctly isolating decode-phase weight fetches from prefill.
+
+---
+
+## [v2.1.0] - 2026-03-17
+
+### SRMIC-X1: Runtime Residency Simulation
+
+Introduction of the trace-driven runtime validation suite to bridge the gap between analytical modeling and physical inference patterns.
+
+### Added
+- **Runtime Simulator**: Python package `srmic_runtime/` implementing regionalized HRM residency with SRMIC-aware "Pin" eviction policies.
+- **Weight Access Tracer**: Hook-based tracer for HuggingFace `transformers` to capture real-world residency requirements.
+- **Empirical Baseline**: First-ever measured hit rates and speedups using `Pythia-1.4B` and `OPT-1.3B`.
+- **CI Study**: Automated runtime study in GitHub Actions to protect architectural invariants (I1, I2).
+
+---
+
 ## [v2.0.0] - 2026-03-17
 
 ### SRMIC-X1: Pre-Silicon Hardened Baseline
