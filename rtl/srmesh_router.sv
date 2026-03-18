@@ -47,6 +47,7 @@ module srmesh_router #(
     function logic [1:0] get_route(input logic [FLIT_WIDTH-1:0] flit);
         logic [1:0] dx, dy;
         dx = flit[59:58]; dy = flit[57:56];
+	get_route = 2'd0;
         if      (dx > ROUTER_X) return 2'd2;
         else if (dx < ROUTER_X) return 2'd3;
         else if (dy > ROUTER_Y) return 2'd1;
