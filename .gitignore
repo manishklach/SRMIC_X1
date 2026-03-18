@@ -6,5 +6,6 @@ __pycache__/
 SRMIC_X1_India_Provisional_Patent_Draft.md
 SRMIC_X1_India_Provisional_Patent_Draft.pdf
 patent_assets/
+SRMIC_X1_arXiv*
 # Keep results and summaries, but maybe ignore some large files if they exist.
 # For now, let's just ignore common python artifacts.
