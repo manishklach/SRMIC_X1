@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, Set, Optional
+from typing import Dict, Set, Optional, List
 
 class AccessResult(Enum):
     HIT = 1
@@ -21,6 +21,11 @@ class ObjectMetadata:
     last_evict_step: int = -1
     thrash_count: int = 0
     bypass_count: int = 0
+    replica_rids: Set[int] = field(default_factory=set)
+    
+    # New Evaluation Metrics
+    replica_lookup_count: int = 0
+    replica_selected_count: int = 0
 
 @dataclass(frozen=True)
 class TraceEvent:

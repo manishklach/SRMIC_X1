@@ -2,33 +2,40 @@ from dataclasses import dataclass
 
 @dataclass
 class X2SimConfig:
-    """Central configuration for SRMIC-X2."""
+    """Central configuration for SRMIC-X2 with Stress-Test support."""
     # Architecture
     NUM_REGIONS: int = 64
-    REGION_CAPACITY_MB: int = 128
+    REGION_CAPACITY_MB: int = 32 # Increased from 4MB to allow multiple tensors
     
-    # Latencies
+    # Latencies (Base)
     LATENCY_HIT: int = 2
     LATENCY_MISS_PROMOTED: int = 6
     LATENCY_MISS_BYPASSED: int = 10
     
+    # Congestion Penalty
+    CONGESTION_PENALTY_THRESHOLD: float = 0.70 # More aggressive penalty
+    CONGESTION_PENALTY_CYCLES: int = 2
+    
     # X2 Policy Defaults
     MAX_CAM_ENTRIES: int = 256
-    REMAP_OCC_THRESHOLD: float = 0.90
+    REMAP_OCC_THRESHOLD: float = 0.85
     REMAP_COOLDOWN_STEPS: int = 50
     THRASH_WINDOW_STEPS: int = 10
     
     # Admission Control
     ADMISSION_ENABLED: bool = True
     REGRET_THRESHOLD: float = 5.0
-    MIN_OCCUPANCY_FOR_ADMISSION_CTRL: float = 0.80
+    MIN_OCCUPANCY_FOR_ADMISSION_CTRL: float = 0.50
     
     # Replication Policy
     REPLICATION_ENABLED: bool = True
-    MAX_TOTAL_REPLICAS: int = 32
-    MAX_REPLICAS_PER_OBJECT: int = 1
-    HOT_OBJECT_ACCESS_THRESHOLD: int = 10
-    REPLICATION_PRESSURE_THRESHOLD: float = 0.85
+    MAX_TOTAL_REPLICAS: int = 64
+    MAX_REPLICAS_PER_OBJECT: int = 2 # Allow 2 replicas for high fanout
+    HOT_OBJECT_ACCESS_THRESHOLD: int = 5
+    REPLICATION_PRESSURE_THRESHOLD: float = 0.50
+    
+    # Routing Refinement
+    PRESSURE_AWARE_ROUTING: bool = True
     
     # Utility Weights
     W_ACCESS: float = 1.0

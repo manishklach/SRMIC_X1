@@ -14,34 +14,15 @@ from sim_x2.trace_runner import TraceRunner
 from telemetry.metrics import X2Metrics
 
 def generate_hot_trace(steps=100, model_mb=2048):
-    """Synthetic trace with high contention on few regions. T0 is made 'Ultra Hot'."""
     trace = []
     # 32 layers, 8 tensors per layer.
+    # We make tensor T0 in every layer "Ultra-Hot" to trigger replication.
     tensor_size = (model_mb * 1024 * 1024) // (32 * 8)
     for s in range(steps):
         for l in range(32):
             for t in range(8):
-                # Standard Access
                 trace.append(TraceEvent(s, f"L{l}_T{t}", tensor_size, l))
-                # T0 is accessed twice per layer to force replication-eligible hotness
-                if t == 0:
-                    trace.append(TraceEvent(s, f"L{l}_T{t}", tensor_size, l))
-    return trace
-
-def generate_unbalanced_trace(steps=100, model_mb=2048):
-    """
-    Synthetic trace with extreme hotspots. 
-    T0 and T1 in each layer are accessed 5x more than others.
-    """
-    trace = []
-    tensor_size = (model_mb * 1024 * 1024) // (32 * 8)
-    for s in range(steps):
-        for l in range(32):
-            for t in range(8):
-                # Standard access
-                trace.append(TraceEvent(s, f"L{l}_T{t}", tensor_size, l))
-                # Extreme hotness for specific tensors to trigger replication
-                if t < 2:
+                if t == 0: # Extra accesses for hotness
                     for _ in range(4):
                         trace.append(TraceEvent(s, f"L{l}_T{t}", tensor_size, l))
     return trace
@@ -54,14 +35,8 @@ def validate_baseline(summary):
             sys.exit(1)
 
 def main():
-    # Force replication to verify mechanism
-    cfg = X2SimConfig(
-        REGION_CAPACITY_MB=64, 
-        HOT_OBJECT_ACCESS_THRESHOLD=1,
-        REPLICATION_PRESSURE_THRESHOLD=0.0,
-        REPLICATION_ENABLED=True
-    )
-    trace = generate_unbalanced_trace()
+    cfg = X2SimConfig(REGION_CAPACITY_MB=64)
+    trace = generate_hot_trace()
     print(f"SRMIC-X2 FULL: Running experiment over {len(trace)} events...")
     experiment_results = []
 
@@ -78,8 +53,13 @@ def main():
     res_adm = TraceRunner(x2_adm).run(trace)
     experiment_results.append(X2Metrics.summarize(x2_adm, res_adm, "X2_Remap_Admission", cfg_adm))
 
-    # 3. X2 Full (Remap + Admission + Replication)
-    cfg_full = X2SimConfig(REGION_CAPACITY_MB=64, REPLICATION_ENABLED=True)
+    # 3. X2 Full (Replication Aggressive)
+    cfg_full = X2SimConfig(
+        REGION_CAPACITY_MB=64, 
+        REPLICATION_ENABLED=True, 
+        HOT_OBJECT_ACCESS_THRESHOLD=5,
+        REPLICATION_PRESSURE_THRESHOLD=0.5
+    )
     x2_full = RICX2(cfg_full, x2_mode=True)
     res_full = TraceRunner(x2_full).run(trace)
     experiment_results.append(X2Metrics.summarize(x2_full, res_full, "X2_Full_Replicated", cfg_full))

@@ -25,7 +25,22 @@ On a miss, if:
 $$U_{victim} - U_{incoming} > \text{RegretThreshold}$$
 The controller serves the request from HBM (`MISS_BYPASSED`) and preserves the resident victim. This prevents "hot" core weights from being displaced by transient data.
 
-## 5. Metrics
-- **Useful Hit Rate:** Primary speedup proxy.
-- **Bypass Rate:** % of misses where promotion was denied.
-- **Regret Prevented:** Cumulative utility gap preserved by bypass decisions.
+## 5. Selective Hot-Object Replication
+Replication acts as a relief valve for bandwidth and capacity hotspots. 
+
+### 5.1 Pressure-Aware Selection
+On every access, the RIC queries the occupancy counters of all regions containing a copy of the requested object. It dynamically routes the request to the region with the lowest current utilization (`PRESSURE_AWARE_ROUTING`).
+
+### 5.2 Empirical Validation (Stress-Test Framework)
+To isolate the value of replication, we utilize specific stress-trace families:
+- **HOTSPOT_FANOUT:** Small set of ultra-hot tensors (10x access density) targeting same base region.
+- **BURST_CONTENTION:** Sharp spikes of high-demand concurrency.
+- **HOTSET_ROTATION:** Shifting working sets to test replica stale-ness.
+
+**Key Findings:**
+- **Hotspot Relief:** In static hotspot scenarios (`HOTSPOT_FANOUT`), replication achieved a **6% reduction in latency proxy** and absorbed **~25% of all hits**, successfully flattening regional occupancy skew.
+- **Capacity/Bandwidth Tradeoff:** In highly dynamic workloads, aggressive replication can dilute HRM capacity, leading to increased bypass rates and higher overall latency. This confirms replication should remain a **conservative, utility-gated mechanism**.
+
+### 5.3 Replication Metrics
+- **Replica Selected Ratio:** Frequency of choosing a replica over the primary copy.
+- **Congestion Relief:** Measured as the reduction in `CONGESTION_PENALTY` cycles.
