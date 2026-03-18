@@ -53,48 +53,61 @@ module srmesh_router #(
     logic [1:0] dest;
 
     always_comb begin
+        // Defaults — eliminates all latch warnings
         found_grant = 1'b0;
         sel_port    = 2'd0;
         sel_vc      = 1'b0;
         dest        = 2'd0;
 
-        for (int i = 0; i < 4; i++) begin
-            logic [1:0] p;
-            logic [3:0] s0, s1; // slot indices (4-bit to prevent overflow in multiply)
-            p  = port_rr + i[1:0];
-            s0 = {2'b0, p} * 4'd2;
-            s1 = {2'b0, p} * 4'd2 + 4'd1;
+        begin : arb_block
+            logic [1:0]  p;
+            logic [3:0]  s0, s1;
+            logic        pvc;
+            logic [3:0]  sp, snp;
+            logic [1:0]  dp, dnp;
 
-            // Priority 1: Starvation watchdog
-            if (!found_grant && vc_full[s0[2:0]] &&
-                starvation_cnt[s0[2:0]*5 +: 5] > 5'd16) begin
-                sel_port = p; sel_vc = 1'b0; found_grant = 1'b1;
-                dest = ((vc_buf[s0[2:0]*FLIT_WIDTH +: FLIT_WIDTH][59:58] > ROUTER_X) ? 2'd2 : ((vc_buf[s0[2:0]*FLIT_WIDTH +: FLIT_WIDTH][59:58] < ROUTER_X) ? 2'd3 : ((vc_buf[s0[2:0]*FLIT_WIDTH +: FLIT_WIDTH][57:56] > ROUTER_Y) ? 2'd1 : 2'd0)));
-            end
-            if (!found_grant && vc_full[s1[2:0]] &&
-                starvation_cnt[s1[2:0]*5 +: 5] > 5'd16) begin
-                sel_port = p; sel_vc = 1'b1; found_grant = 1'b1;
-                dest = ((vc_buf[s1[2:0]*FLIT_WIDTH +: FLIT_WIDTH][59:58] > ROUTER_X) ? 2'd2 : ((vc_buf[s1[2:0]*FLIT_WIDTH +: FLIT_WIDTH][59:58] < ROUTER_X) ? 2'd3 : ((vc_buf[s1[2:0]*FLIT_WIDTH +: FLIT_WIDTH][57:56] > ROUTER_Y) ? 2'd1 : 2'd0)));
-            end
+            p   = 2'd0;
+            s0  = 4'd0;
+            s1  = 4'd0;
+            pvc = 1'b0;
+            sp  = 4'd0;
+            snp = 4'd0;
+            dp  = 2'd0;
+            dnp = 2'd0;
 
-            // Priority 2: WRR — preferred VC first
-            if (!found_grant) begin
-                logic       pvc;
-                logic [3:0] sp, snp;
-                logic [1:0] dp, dnp;
-                pvc = (wrr_state[{2'b0,p}*3 +: 3] < 3'd2) ? 1'b0 : 1'b1;
-                sp  = pvc ? s1 : s0;
-                snp = pvc ? s0 : s1;
-                if (vc_full[sp[2:0]]) begin
-                    dp = ((vc_buf[sp[2:0]*FLIT_WIDTH +: FLIT_WIDTH][59:58] > ROUTER_X) ? 2'd2 : ((vc_buf[sp[2:0]*FLIT_WIDTH +: FLIT_WIDTH][59:58] < ROUTER_X) ? 2'd3 : ((vc_buf[sp[2:0]*FLIT_WIDTH +: FLIT_WIDTH][57:56] > ROUTER_Y) ? 2'd1 : 2'd0)));
-                    if (credits[{2'b0,dp}*2*3/2 +: 3] > 0) begin
-                        sel_port = p; sel_vc = pvc; found_grant = 1'b1; dest = dp;
-                    end
+            for (int i = 0; i < 4; i++) begin
+                p  = port_rr + i[1:0];
+                s0 = {2'b0, p} * 4'd2;
+                s1 = {2'b0, p} * 4'd2 + 4'd1;
+
+                // Priority 1: Starvation watchdog
+                if (!found_grant && vc_full[s0[2:0]] &&
+                    starvation_cnt[s0[2:0]*5 +: 5] > 5'd16) begin
+                    sel_port = p; sel_vc = 1'b0; found_grant = 1'b1;
+                    dest = ((vc_buf[s0[2:0]*FLIT_WIDTH +: FLIT_WIDTH][59:58] > ROUTER_X) ? 2'd2 : ((vc_buf[s0[2:0]*FLIT_WIDTH +: FLIT_WIDTH][59:58] < ROUTER_X) ? 2'd3 : ((vc_buf[s0[2:0]*FLIT_WIDTH +: FLIT_WIDTH][57:56] > ROUTER_Y) ? 2'd1 : 2'd0)));
                 end
-                if (!found_grant && vc_full[snp[2:0]]) begin
-                    dnp = ((vc_buf[snp[2:0]*FLIT_WIDTH +: FLIT_WIDTH][59:58] > ROUTER_X) ? 2'd2 : ((vc_buf[snp[2:0]*FLIT_WIDTH +: FLIT_WIDTH][59:58] < ROUTER_X) ? 2'd3 : ((vc_buf[snp[2:0]*FLIT_WIDTH +: FLIT_WIDTH][57:56] > ROUTER_Y) ? 2'd1 : 2'd0)));
-                    if (credits[{2'b0,dnp}*2*3/2 +: 3] > 0) begin
-                        sel_port = p; sel_vc = ~pvc; found_grant = 1'b1; dest = dnp;
+                if (!found_grant && vc_full[s1[2:0]] &&
+                    starvation_cnt[s1[2:0]*5 +: 5] > 5'd16) begin
+                    sel_port = p; sel_vc = 1'b1; found_grant = 1'b1;
+                    dest = ((vc_buf[s1[2:0]*FLIT_WIDTH +: FLIT_WIDTH][59:58] > ROUTER_X) ? 2'd2 : ((vc_buf[s1[2:0]*FLIT_WIDTH +: FLIT_WIDTH][59:58] < ROUTER_X) ? 2'd3 : ((vc_buf[s1[2:0]*FLIT_WIDTH +: FLIT_WIDTH][57:56] > ROUTER_Y) ? 2'd1 : 2'd0)));
+                end
+
+                // Priority 2: WRR — preferred VC first
+                if (!found_grant) begin
+                    pvc = (wrr_state[{2'b0,p}*3 +: 3] < 3'd2) ? 1'b0 : 1'b1;
+                    sp  = pvc ? s1 : s0;
+                    snp = pvc ? s0 : s1;
+                    if (vc_full[sp[2:0]]) begin
+                        dp = ((vc_buf[sp[2:0]*FLIT_WIDTH +: FLIT_WIDTH][59:58] > ROUTER_X) ? 2'd2 : ((vc_buf[sp[2:0]*FLIT_WIDTH +: FLIT_WIDTH][59:58] < ROUTER_X) ? 2'd3 : ((vc_buf[sp[2:0]*FLIT_WIDTH +: FLIT_WIDTH][57:56] > ROUTER_Y) ? 2'd1 : 2'd0)));
+                        if (credits[{2'b0,dp}*2*3/2 +: 3] > 0) begin
+                            sel_port = p; sel_vc = pvc; found_grant = 1'b1; dest = dp;
+                        end
+                    end
+                    if (!found_grant && vc_full[snp[2:0]]) begin
+                        dnp = ((vc_buf[snp[2:0]*FLIT_WIDTH +: FLIT_WIDTH][59:58] > ROUTER_X) ? 2'd2 : ((vc_buf[snp[2:0]*FLIT_WIDTH +: FLIT_WIDTH][59:58] < ROUTER_X) ? 2'd3 : ((vc_buf[snp[2:0]*FLIT_WIDTH +: FLIT_WIDTH][57:56] > ROUTER_Y) ? 2'd1 : 2'd0)));
+                        if (credits[{2'b0,dnp}*2*3/2 +: 3] > 0) begin
+                            sel_port = p; sel_vc = ~pvc; found_grant = 1'b1; dest = dnp;
+                        end
                     end
                 end
             end
