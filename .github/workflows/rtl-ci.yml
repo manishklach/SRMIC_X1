@@ -36,3 +36,11 @@ jobs:
 
     - name: Run Formal Verification
       run: make formal
+
+    - name: Install Python Dependencies (for runtime study)
+      run: |
+        pip install pandas matplotlib torch transformers
+
+    - name: Run Runtime Study
+      run: |
+        python studies/runtime/run_study.py

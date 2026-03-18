@@ -1,0 +1,42 @@
+[
+    {
+        "hrm_budget_gb": 1,
+        "hit_rate": 0.0,
+        "miss_rate": 1.0,
+        "promotions": 0,
+        "demotions": 0,
+        "working_set_gb": 3.906249910593033,
+        "effective_bw_reduction": 0.0,
+        "speedup_vs_hbm": 1.0
+    },
+    {
+        "hrm_budget_gb": 4,
+        "hit_rate": 0.310625,
+        "miss_rate": 0.6893750000000001,
+        "promotions": 7721,
+        "demotions": 7563,
+        "working_set_gb": 3.906249910593033,
+        "effective_bw_reduction": 31.0625,
+        "speedup_vs_hbm": 1.303727846811978
+    },
+    {
+        "hrm_budget_gb": 7,
+        "hit_rate": 0.888125,
+        "miss_rate": 0.11187499999999995,
+        "promotions": 1253,
+        "demotions": 1032,
+        "working_set_gb": 3.906249910593033,
+        "effective_bw_reduction": 88.8125,
+        "speedup_vs_hbm": 2.994852597098737
+    },
+    {
+        "hrm_budget_gb": 10,
+        "hit_rate": 0.98,
+        "miss_rate": 0.020000000000000018,
+        "promotions": 224,
+        "demotions": 0,
+        "working_set_gb": 3.906249910593033,
+        "effective_bw_reduction": 98.0,
+        "speedup_vs_hbm": 3.773584905660377
+    }
+]
