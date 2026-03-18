@@ -44,11 +44,11 @@ module srmesh_router #(
     // ==================================================
     // Local State
     // ==================================================
-    logic [FLIT_WIDTH-1:0]                  vc_buf [0:3][0:1];
-    logic [3:0][1:0]                        vc_full;
-    logic [$clog2(MAX_CREDITS+1)-1:0]       credits [0:3][0:1];
-    logic [4:0]                             starvation_cnt [0:3][0:1];
-    logic [1:0]                             wrr_state [0:3];
+    logic [8*FLIT_WIDTH-1:0]                vc_buf;  // [port*2+vc]*FLIT_WIDTH +: FLIT_WIDTH
+    logic [7:0]                             vc_full;  // [port*2 +: 2]
+    logic [8*($clog2(MAX_CREDITS+1))-1:0]   credits; // [port*2+vc]*clog2 +: clog2
+    logic [39:0]                            starvation_cnt; // [port*2+vc]*5 +: 5
+    logic [7:0]                             wrr_state; // [port*2 +: 2]
     logic [1:0]                             port_rr;
 
     // Latency Pipeline
@@ -91,22 +91,22 @@ module srmesh_router #(
 
             if (!found_grant) begin
                 // Priority 1: Starvation Watchdog
-                if (vc_full[p][0] && (starvation_cnt[p][0] > 16)) begin
+                if (vc_full[(p)*2+(0)] && (starvation_cnt[((p)*2+(0))*5 +: 5] > 16)) begin
                     sel_port = p; sel_vc = 0; found_grant = 1'b1;
-                    dest = get_route(vc_buf[p][0]);
-                end else if (vc_full[p][1] && (starvation_cnt[p][1] > 16)) begin
+                    dest = get_route(vc_buf[((p)*2+(0))*FLIT_WIDTH +: FLIT_WIDTH]);
+                end else if (vc_full[(p)*2+(1)] && (starvation_cnt[((p)*2+(1))*5 +: 5] > 16)) begin
                     sel_port = p; sel_vc = 1; found_grant = 1'b1;
-                    dest = get_route(vc_buf[p][1]);
+                    dest = get_route(vc_buf[((p)*2+(1))*FLIT_WIDTH +: FLIT_WIDTH]);
                 end
             end
 
             if (!found_grant) begin
                 // Priority 2: WRR Arbitration
-                preferred_vc = (wrr_state[p] < VC0_WEIGHT) ? 1'b0 : 1'b1;
-                if (vc_full[p][preferred_vc]) begin
+                preferred_vc = (wrr_state[(p)*2 +: 2] < VC0_WEIGHT) ? 1'b0 : 1'b1;
+                if (vc_full[(p)*2+(preferred_vc)]) begin
                     logic [1:0] d;
-                    d = get_route(vc_buf[p][preferred_vc]);
-                    if (credits[d][preferred_vc] > 0) begin
+                    d = get_route(vc_buf[((p)*2+(preferred_vc))*FLIT_WIDTH +: FLIT_WIDTH]);
+                    if (credits[((d)*2+(preferred_vc))*($clog2(MAX_CREDITS+1)) +: ($clog2(MAX_CREDITS+1))] > 0) begin
                         sel_port = p; sel_vc = preferred_vc; found_grant = 1'b1;
                         dest = d;
                     end
@@ -132,11 +132,11 @@ module srmesh_router #(
         if (!rst_n) begin
             for (int p = 0; p < 4; p++) begin
                 for (int v = 0; v < 2; v++) begin
-                    credits[p][v]        <= MAX_CREDITS;
-                    vc_full[p][v]        <= 0;
-                    starvation_cnt[p][v] <= 0;
+                    credits[((p)*2+(v))*($clog2(MAX_CREDITS+1)) +: ($clog2(MAX_CREDITS+1))]        <= MAX_CREDITS;
+                    vc_full[(p)*2+(v)]        <= 0;
+                    starvation_cnt[((p)*2+(v))*5 +: 5] <= 0;
                 end
-                wrr_state[p] <= 0;
+                wrr_state[(p)*2 +: 2] <= 0;
             end
             port_rr          <= 0;
             in_credit_ret    <= 0;
@@ -161,25 +161,25 @@ module srmesh_router #(
                     starvation_cnt[p][in_vc_id[p]] <= 0;
                 end
                 if (out_credit_ret[p]) begin
-                    credits[p][0] <= (credits[p][0] < MAX_CREDITS) ? credits[p][0] + 1 : credits[p][0];
+                    credits[((p)*2+(0))*($clog2(MAX_CREDITS+1)) +: ($clog2(MAX_CREDITS+1))] <= (credits[((p)*2+(0))*($clog2(MAX_CREDITS+1)) +: ($clog2(MAX_CREDITS+1))] < MAX_CREDITS) ? credits[((p)*2+(0))*($clog2(MAX_CREDITS+1)) +: ($clog2(MAX_CREDITS+1))] + 1 : credits[((p)*2+(0))*($clog2(MAX_CREDITS+1)) +: ($clog2(MAX_CREDITS+1))];
                 end
-                if (vc_full[p][0]) starvation_cnt[p][0] <= starvation_cnt[p][0] + 1;
-                if (vc_full[p][1]) starvation_cnt[p][1] <= starvation_cnt[p][1] + 1;
+                if (vc_full[(p)*2+(0)]) starvation_cnt[((p)*2+(0))*5 +: 5] <= starvation_cnt[((p)*2+(0))*5 +: 5] + 1;
+                if (vc_full[(p)*2+(1)]) starvation_cnt[((p)*2+(1))*5 +: 5] <= starvation_cnt[((p)*2+(1))*5 +: 5] + 1;
             end
 
             // Process Grant
             if (found_grant) begin
-                pipe_out_flit[dest*FLIT_WIDTH +: FLIT_WIDTH] <= vc_buf[sel_port][sel_vc];
+                pipe_out_flit[dest*FLIT_WIDTH +: FLIT_WIDTH] <= vc_buf[((sel_port)*2+(sel_vc))*FLIT_WIDTH +: FLIT_WIDTH];
                 pipe_out_valid[dest]             <= 1'b1;
                 pipe_out_vc_id[dest]             <= sel_vc;
-                credits[dest][sel_vc]            <= credits[dest][sel_vc] - 1;
-                vc_full[sel_port][sel_vc]        <= 1'b0;
+                credits[((dest)*2+(sel_vc))*($clog2(MAX_CREDITS+1)) +: ($clog2(MAX_CREDITS+1))]            <= credits[((dest)*2+(sel_vc))*($clog2(MAX_CREDITS+1)) +: ($clog2(MAX_CREDITS+1))] - 1;
+                vc_full[(sel_port)*2+(sel_vc)]        <= 1'b0;
                 in_credit_ret[sel_port]          <= 1'b1;
-                starvation_cnt[sel_port][sel_vc] <= 0;
+                starvation_cnt[((sel_port)*2+(sel_vc))*5 +: 5] <= 0;
 
                 port_rr <= sel_port + 1;
-                if (sel_vc == 0) wrr_state[sel_port] <= wrr_state[sel_port] + 1;
-                else wrr_state[sel_port]             <= 0;
+                if (sel_vc == 0) wrr_state[(sel_port)*2 +: 2] <= wrr_state[(sel_port)*2 +: 2] + 1;
+                else wrr_state[(sel_port)*2 +: 2]             <= 0;
             end else begin
                 port_rr <= port_rr + 1;
             end
@@ -192,11 +192,11 @@ module srmesh_router #(
 `ifndef SYNTHESIS
     generate
         for (genvar p = 0; p < 4; p++) begin : gen_sva
-            assert property (@(posedge clk) credits[p][0] <= MAX_CREDITS);
-            assert property (@(posedge clk) credits[p][1] <= MAX_CREDITS);
-            assert property (@(posedge clk) (pipe_out_valid[p] && pipe_out_vc_id[p] == 0) |-> (credits[p][0] > 0));
+            assert property (@(posedge clk) credits[((p)*2+(0))*($clog2(MAX_CREDITS+1)) +: ($clog2(MAX_CREDITS+1))] <= MAX_CREDITS);
+            assert property (@(posedge clk) credits[((p)*2+(1))*($clog2(MAX_CREDITS+1)) +: ($clog2(MAX_CREDITS+1))] <= MAX_CREDITS);
+            assert property (@(posedge clk) (pipe_out_valid[p] && pipe_out_vc_id[p] == 0) |-> (credits[((p)*2+(0))*($clog2(MAX_CREDITS+1)) +: ($clog2(MAX_CREDITS+1))] > 0));
 `ifndef VERILATOR
-            assert property (@(posedge clk) vc_full[p][0] |-> ##[1:40] !vc_full[p][0]); 
+            assert property (@(posedge clk) vc_full[(p)*2+(0)] |-> ##[1:40] !vc_full[(p)*2+(0)]); 
 `endif
         end
     endgenerate
