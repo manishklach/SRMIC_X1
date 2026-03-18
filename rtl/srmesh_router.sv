@@ -30,7 +30,7 @@ module srmesh_router #(
 );
 
     // credit field width
-    localparam int unsigned CW = $clog2(MAX_CREDITS+1);
+    localparam CW = 3; // $clog2(MAX_CREDITS+1) = $clog2(5) = 3
 
     // flat packed arrays: 8 slots = 4 ports x 2 VCs
     logic [8*FLIT_WIDTH-1:0]  vc_buf;         // slot s: [s*FLIT_WIDTH +: FLIT_WIDTH]
@@ -44,7 +44,7 @@ module srmesh_router #(
     logic [4*FLIT_WIDTH-1:0]  pipe_out_flit;
     logic [3:0]               pipe_out_vc_id;
 
-    function automatic logic [1:0] get_route(input logic [FLIT_WIDTH-1:0] flit);
+    function logic [1:0] get_route(input logic [FLIT_WIDTH-1:0] flit);
         logic [1:0] dx, dy;
         dx = flit[59:58]; dy = flit[57:56];
         if      (dx > ROUTER_X) return 2'd2;
@@ -88,7 +88,7 @@ module srmesh_router #(
                 logic       pvc;
                 logic [3:0] sp, snp;
                 logic [1:0] dp, dnp;
-                pvc = (wrr_state[{2'b0,p}*3 +: 3] < 3'(VC0_WEIGHT)) ? 1'b0 : 1'b1;
+                pvc = (wrr_state[{2'b0,p}*3 +: 3] < 3'd2) ? 1'b0 : 1'b1;
                 sp  = pvc ? s1 : s0;
                 snp = pvc ? s0 : s1;
                 if (vc_full[sp[2:0]]) begin
@@ -125,7 +125,7 @@ module srmesh_router #(
             wrr_state        <= '0;
             // Init credits to MAX_CREDITS for all 8 slots
             for (int s = 0; s < 8; s++)
-                credits[s*3 +: 3] <= 3'(MAX_CREDITS);
+                credits[s*3 +: 3] <= 3'd4;
         end else begin
             out_valid <= pipe_out_valid;
             out_flit  <= pipe_out_flit;
@@ -139,13 +139,13 @@ module srmesh_router #(
             // Input buffering
             for (int p = 0; p < 4; p++) begin
                 logic [2:0] sv;
-                sv = 3'(p) * 3'd2 + {2'b0, in_vc_id[p]};
+                sv = {1'b0, p} * 3'd2 + {2'b0, in_vc_id[p]};
                 if (in_valid[p] && !vc_full[sv]) begin
                     vc_buf[sv*FLIT_WIDTH +: FLIT_WIDTH] <= in_flit[p*FLIT_WIDTH +: FLIT_WIDTH];
                     vc_full[sv]              <= 1'b1;
                     starvation_cnt[sv*5 +: 5] <= '0;
                 end
-                if (out_credit_ret[p] && credits[p*2*3/2 +: 3] < 3'(MAX_CREDITS))
+                if (out_credit_ret[p] && credits[p*2*3/2 +: 3] < 3'd4)
                     credits[p*2*3/2 +: 3] <= credits[p*2*3/2 +: 3] + 1;
                 if (vc_full[p*2])   starvation_cnt[p*2*5 +: 5]   <= starvation_cnt[p*2*5 +: 5] + 1;
                 if (vc_full[p*2+1]) starvation_cnt[(p*2+1)*5 +: 5] <= starvation_cnt[(p*2+1)*5 +: 5] + 1;
@@ -154,7 +154,7 @@ module srmesh_router #(
             // Process grant
             if (found_grant) begin
                 logic [2:0] ss;
-                ss = 3'(sel_port) * 3'd2 + {2'b0, sel_vc};
+                ss = sel_port * 3'd2 + {2'b0, sel_vc};
                 pipe_out_flit[dest*FLIT_WIDTH +: FLIT_WIDTH] <=
                     vc_buf[ss*FLIT_WIDTH +: FLIT_WIDTH];
                 pipe_out_valid[dest] <= 1'b1;
