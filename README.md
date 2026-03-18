@@ -180,6 +180,25 @@ See [Runtime Validation Review](docs/RUNTIME_VALIDATION_REVIEW.md) for detailed 
 
 ---
 
+# SRMIC-X2: Intelligent Residency Control
+
+SRMIC-X2 is the next-generation control plane for the SRMIC architecture. It transitions the memory tier from a static cache to an **intelligent, collision-aware residency system**.
+
+## Key Improvements over X1:
+*   **Reactive Remapping:** Dynamically resolves regional hash collisions using a 256-entry hardware-proxy CAM.
+*   **Regret-Aware Admission:** Protects "hot" weights by denying residency to low-utility incoming data during high-pressure cycles.
+*   **Selective Replication:** Load-balances ultra-hot tensors across the mesh, reducing regional occupancy skew by **26%**.
+
+## Empirical Performance (X2 Full Suite)
+On high-contention static hotspots (`HOTSPOT_FANOUT` workload), X2 demonstrates:
+- **6.0% Latency Reduction** via congestion relief.
+- **90%+ Hit Rates** on previously thrashed regions.
+- **95%+ Thrash Reduction** compared to LRU-only baselines.
+
+See [SRMIC-X2 Technical Brief](docs/SRMIC_X2_TECHNICAL_BRIEF.md) for architecture details and [Results Summary](docs/SRMIC_X2_RESULTS_SUMMARY.md) for the latest validation data.
+
+---
+
 ## 7. The Bottleneck Crossover — A Real Architectural Finding
 
 The 70B curve shows a peak at 7GB then a gradual settling to a 1.97×
