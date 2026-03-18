@@ -1,28 +1,26 @@
-from typing import List, Dict
 import pandas as pd
+import json
 from ric_x2.types import AccessResult
-from ric_x2.controller import RICX2
 
 class X2Metrics:
-    """Aggregates simulation results into actionable reports."""
+    """Aggregates and serializes result data."""
     @staticmethod
-    def summarize(controller: RICX2, results: List[AccessResult], label: str) -> Dict:
+    def summarize(controller, results, label, cfg):
         total = len(results)
         hits = results.count(AccessResult.HIT)
-        promos = results.count(AccessResult.MISS_PROMOTED)
-        bypasses = results.count(AccessResult.MISS_BYPASSED)
+        promotions = results.count(AccessResult.MISS_PROMOTED)
         
-        hit_rate = hits / total if total > 0 else 0
-        collision_data = controller.collision.get_report()
-        
+        latency = (hits * cfg.LATENCY_HIT) + \
+                  (promotions * cfg.LATENCY_MISS_PROMOTED) + \
+                  ((total - hits - promotions) * cfg.LATENCY_MISS_BYPASSED)
+
         return {
             "label": label,
             "total_accesses": total,
-            "hit_rate": hit_rate,
-            "promotions": promos,
-            "bypasses": bypasses,
-            "remaps": controller.remap.total_remaps,
+            "hits": hits,
+            "hit_rate": hits / total if total > 0 else 0,
+            "thrash_events": controller.thrash.thrash_count,
+            "remap_count": controller.remap.remap_count,
             "occupancy_skew": controller.occupancy.get_skew(),
-            "total_collisions": collision_data["total_collisions"],
-            "thrash_events": controller.thrash.thrash_events
+            "latency_proxy": latency
         }

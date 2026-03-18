@@ -2,34 +2,34 @@
     {
         "label": "X1_Baseline",
         "total_accesses": 5120,
-        "hit_rate": 0.9388671875,
-        "promotions": 313,
+        "hit_rate": 0.93515625,
+        "promotions": 332,
         "bypasses": 0,
         "remaps": 0,
-        "occupancy_skew": 0.2317232804681858,
-        "total_collisions": 249,
-        "thrash_events": 57
+        "occupancy_skew": 0.24800842467734338,
+        "total_collisions": 269,
+        "thrash_events": 76
     },
     {
         "label": "X2_Cons_0.95",
         "total_accesses": 5120,
-        "hit_rate": 0.9486328125,
-        "promotions": 263,
+        "hit_rate": 0.948046875,
+        "promotions": 266,
         "bypasses": 0,
-        "remaps": 6,
-        "occupancy_skew": 0.22521148914686834,
-        "total_collisions": 199,
-        "thrash_events": 4
+        "remaps": 8,
+        "occupancy_skew": 0.24378880900984257,
+        "total_collisions": 202,
+        "thrash_events": 6
     },
     {
         "label": "X2_Aggr_0.70",
         "total_accesses": 5120,
-        "hit_rate": 0.908203125,
-        "promotions": 470,
+        "hit_rate": 0.8830078125,
+        "promotions": 599,
         "bypasses": 0,
-        "remaps": 31,
-        "occupancy_skew": 0.24431243954255455,
-        "total_collisions": 406,
-        "thrash_events": 190
+        "remaps": 34,
+        "occupancy_skew": 0.25017541453370146,
+        "total_collisions": 535,
+        "thrash_events": 317
     }
 ]

@@ -1,20 +1,16 @@
-from typing import Dict, List
-from .types import TensorMetadata
-
 class CollisionTracker:
-    """Tracks mapping conflicts where multiple tensors target the same region."""
+    """Detects mapping conflicts in HRM regions."""
     def __init__(self, num_regions: int):
-        self.num_regions = num_regions
         self.collision_counts = [0] * num_regions
         self.total_collisions = 0
 
-    def record_attempt(self, rid: int, tensor_id: str, resident_tensors: set):
-        """Logic: If region has other tensors and we are adding a new one, it's a potential collision."""
-        if len(resident_tensors) > 0 and tensor_id not in resident_tensors:
+    def record_attempt(self, rid: int, object_id: str, resident_set: set):
+        # A collision is defined as targeting a region that already contains other data
+        if len(resident_set) > 0 and object_id not in resident_set:
             self.collision_counts[rid] += 1
             self.total_collisions += 1
 
-    def get_report(self) -> Dict:
+    def get_report(self):
         return {
             "total_collisions": self.total_collisions,
             "max_collisions_per_region": max(self.collision_counts) if self.collision_counts else 0

@@ -1,34 +1,25 @@
-from typing import Dict, Optional, Set
-from .types import TensorMetadata
+from typing import Dict, Optional
 
-class RemapPolicy:
-    """Decides when and where to remap tensors to avoid hotspots."""
-    def __init__(self, max_entries: int = 256, cooldown: int = 50):
-        self.remap_table: Dict[str, int] = {} # tid -> rid
+class RemapEngine:
+    """Software-modeled hardware Remap CAM."""
+    def __init__(self, max_entries: int, cooldown: int):
+        self.cam: Dict[str, int] = {}
         self.max_entries = max_entries
         self.cooldown = cooldown
-        self.last_remap_token: Dict[str, int] = {}
-        self.total_remaps = 0
+        self.last_remap_step: Dict[str, int] = {}
+        self.remap_count = 0
 
-    def get_region_override(self, tid: str) -> Optional[int]:
-        """Returns remapped region ID if present."""
-        return self.remap_table.get(tid)
+    def lookup(self, object_id: str) -> Optional[int]:
+        return self.cam.get(object_id)
 
-    def should_remap(self, tid: str, token_idx: int, region_occ: float, threshold: float) -> bool:
-        """Logic: Remap if region is too full and we aren't in cooldown."""
-        if region_occ < threshold:
+    def bind(self, object_id: str, rid: int, current_step: int) -> bool:
+        last = self.last_remap_step.get(object_id, -self.cooldown - 1)
+        if (current_step - last) < self.cooldown:
             return False
         
-        last_idx = self.last_remap_token.get(tid, -1000)
-        if (token_idx - last_idx) < self.cooldown:
-            return False
-            
-        if len(self.remap_table) >= self.max_entries and tid not in self.remap_table:
-            return False
-            
-        return True
-
-    def perform_remap(self, tid: str, target_rid: int, token_idx: int):
-        self.remap_table[tid] = target_rid
-        self.last_remap_token[tid] = token_idx
-        self.total_remaps += 1
+        if len(self.cam) < self.max_entries:
+            self.cam[object_id] = rid
+            self.last_remap_step[object_id] = current_step
+            self.remap_count += 1
+            return True
+        return False

@@ -1,26 +1,15 @@
-from typing import List, Dict, Any
+from typing import List, Dict
+from ric_x2.types import TraceEvent, AccessResult
 from ric_x2.controller import RICX2
-from ric_x2.types import TensorMetadata, AccessResult
-from sim_x2.config import X2SimConfig
 
 class TraceRunner:
-    """Executes a trace through a given RIC controller."""
+    """Executes a list of events through a controller."""
     def __init__(self, controller: RICX2):
         self.controller = controller
+        self.results: List[AccessResult] = []
 
-    def run(self, trace: List[Dict[str, Any]], remap_threshold: float = 0.9) -> List[AccessResult]:
-        results = []
+    def run(self, trace: List[TraceEvent]):
         for event in trace:
-            tensor = TensorMetadata(
-                tensor_id=event['tensor_id'],
-                size_bytes=event['size_bytes'],
-                layer_idx=event.get('layer_idx'),
-                phase_tag=event.get('phase_tag')
-            )
-            res = self.controller.handle_access(
-                tensor, 
-                event['token_idx'], 
-                remap_threshold=remap_threshold
-            )
-            results.append(res)
-        return results
+            res = self.controller.handle_access(event)
+            self.results.append(res)
+        return self.results
