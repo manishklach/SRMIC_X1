@@ -1,0 +1,4 @@
+label,total_accesses,hit_rate,promotions,bypasses,remaps,occupancy_skew,total_collisions,thrash_events
+X1_Baseline,5120,0.9388671875,313,0,0,0.2317232804681858,249,57
+X2_Cons_0.95,5120,0.9486328125,263,0,6,0.22521148914686834,199,4
+X2_Aggr_0.70,5120,0.908203125,470,0,31,0.24431243954255455,406,190
