@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.0.0] - 2026-03-18
+
+### SRMIC-X2: Intelligent Residency Tier
+
+This major release introduces the **SRMIC-X2 architecture**, transitioning the memory tier from a static data store to an **intelligent, collision-aware residency system**.
+
+### Added
+- **RIC-X2 Intelligence Layer**: Complete implementation of the next-generation Residency Intelligence Controller.
+- **Reactive Remapping**: Added a 256-entry hardware-proxy CAM to surgically resolve regional hash collisions and load-balance the mesh.
+- **Regret-Aware Admission Control**: Implemented a utility-heuristic based bypass mechanism to protect high-utility resident objects from "residency pollution."
+- **Selective Hot-Object Replication**: Integrated automated cloning for ultra-hot tensors, achieving a **26% reduction in regional occupancy skew**.
+- **Replication Stress-Test Framework**: A multi-workload evaluation harness (`experiments/replication_eval.py`) supporting Hotspots, Bursts, and Rotation scenarios.
+- **X2 Technical Suite**: Added comprehensive buyer-grade documentation including `TECHNICAL_BRIEF.md`, `RESULTS_SUMMARY.md`, and `IP_DIFFERENTIATION.md`.
+
+### Fixed
+- **Metric Isolation**: Hardened the evaluation harness to ensure zero metric leakage between X1 baseline and X2 scenarios.
+- **Deterministic Simulation**: Replaced Python's randomized hashing with a consistent MD5-based mapping for architectural reproducibility.
+
+### Changed
+- **Pressure-Aware Routing**: Refined the `handle_access` logic to dynamically route hits to the coldest resident copy among primary and replica regions.
+- **Latency Proxy Hardening**: Enhanced the cycle-proxy model to include regional congestion penalties, accurately reflecting tail-latency gains.
+
+---
+
 ## [v2.2.0] - 2026-03-18
 
 ### SRMIC-X1: Empirical Scaling Validation (7B Milestone)
