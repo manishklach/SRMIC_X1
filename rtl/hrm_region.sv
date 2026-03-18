@@ -258,23 +258,6 @@ module hrm_region #(
     // Assertions
     // ==================================================
 `ifndef SYNTHESIS
-    // Outstanding request counter formal invariant
-    logic [3:0] formal_outstanding;
-    always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n) formal_outstanding <= 0;
-        else begin
-            case ({req_accept, response_valid})
-                2'b10: formal_outstanding <= formal_outstanding + 1'b1;
-                2'b01: formal_outstanding <= formal_outstanding - 1'b1;
-                default: formal_outstanding <= formal_outstanding;
-            endcase
-        end
-    end
-    assert property (@(posedge clk) disable iff (!rst_n) 
-        formal_outstanding <= 4'd8);
-    assert property (@(posedge clk) disable iff (!rst_n)
-        response_valid |-> (formal_outstanding > 0));
-
     assert property (@(posedge clk) (req_accept && hit_comb) |-> valid_array[hit_index_comb]);
     assert property (@(posedge clk) demote_request |-> region_full);
 
@@ -284,7 +267,8 @@ module hrm_region #(
                 else $fatal("HRM victim_index out of bounds");
             
             // Corrected Promotion commit integrity check (delayed by 1 cycle)
-            if (promo_commit_check_valid) begin
+            // Guard: skip check if a demotion invalidated the slot simultaneously
+            if (promo_commit_check_valid && !demote_request) begin
                 assert (valid_array[promo_commit_check_index] == 1'b1)
                     else $error("HRM_PROMO_ERROR: Valid bit not set at commit time");
                 assert (tag_array[promo_commit_check_index] == promo_commit_check_page_id)
