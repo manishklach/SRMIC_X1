@@ -10,13 +10,18 @@ class WeightAccessTracer:
     """
     def __init__(self):
         self.access_trace: List[Dict[str, Any]] = []
-        self.current_token_idx: int = 0
+        self.current_token_idx: int = -1 # Start at -1 so first access moves to 0
         self.hooks: List[torch.utils.hooks.RemovableHandle] = []
+        self.first_module_name: Optional[str] = None
         # data_ptr -> (name, size_bytes, shape)
         self.tensor_info: Dict[int, Tuple[str, int, torch.Size]] = {}
 
     def hook_fn(self, name: str):
         def hook(module: nn.Module, input: Any, output: Any):
+            # Auto-increment token index when the first module is hit
+            if name == self.first_module_name:
+                self.current_token_idx += 1
+
             if hasattr(module, 'weight') and module.weight is not None:
                 w = module.weight
                 ptr = w.data_ptr()
@@ -27,7 +32,7 @@ class WeightAccessTracer:
                     self.tensor_info[ptr] = (name, size, w.shape)
                 
                 self.access_trace.append({
-                    'token_idx': self.current_token_idx,
+                    'token_idx': max(0, self.current_token_idx),
                     'tensor_name': name,
                     'ptr': ptr,
                     'size_bytes': size,
@@ -39,8 +44,11 @@ class WeightAccessTracer:
         """
         Attaches forward hooks to all Linear and Embedding layers.
         """
+        self.first_module_name = None
         for name, module in model.named_modules():
             if isinstance(module, (nn.Linear, nn.Embedding)):
+                if self.first_module_name is None:
+                    self.first_module_name = name
                 handle = module.register_forward_hook(self.hook_fn(name))
                 self.hooks.append(handle)
         return self

@@ -15,6 +15,9 @@ def main():
     parser.add_argument("--policy", type=str, default="srmic", choices=["lru", "hotness", "srmic"], help="Eviction policy")
     parser.add_argument("--output", type=str, default="results/", help="Output directory")
     parser.add_argument("--dry-run", action="store_true", help="Use synthetic trace for testing")
+    parser.add_argument("--seed", type=int, default=1234, help="Random seed for reproducibility")
+    parser.add_argument("--load-in-8bit", action="store_true", help="Load model in 8-bit mode")
+    parser.add_argument("--hf-token", type=str, default=None, help="HuggingFace API token")
     
     args = parser.parse_args()
     
@@ -29,7 +32,16 @@ def main():
         model_name = f"Synthetic-Llama-3-8B"
     else:
         print(f"Starting Live Trace for {args.model}...")
-        df, trace = run_sweep(args.model, args.prompt, args.hrm_budgets, num_tokens=args.tokens, policy=args.policy)
+        df, trace = run_sweep(
+            args.model, 
+            args.prompt, 
+            args.hrm_budgets, 
+            num_tokens=args.tokens, 
+            policy=args.policy,
+            seed=args.seed,
+            load_in_8bit=args.load_in_8bit,
+            hf_token=args.hf_token
+        )
         model_name = args.model
         
     # --- Print Terminal Summary ---
