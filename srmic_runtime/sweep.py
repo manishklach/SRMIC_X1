@@ -1,29 +1,30 @@
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from typing import List, Dict, Any, Tuple
+import pandas as pd
 from .tracer import WeightAccessTracer
 from .residency_sim import HRMResidencySimulator
-import pandas as pd
-import os
 
+# KEY ARCHITECTURAL CONSTANTS (from SRMIC-X1 spec)
 HBM_BW_TBPS = 24.0      # TB/s aggregate
 SRMESH_BW_TBPS = 96.0   # TB/s aggregate  
 NUM_REGIONS = 64        # logical HRM regions (flagship)
+PAGE_SIZE_MB = 2        # default page size
 
-def run_sweep(model_name, prompt, hrm_budgets_gb, num_tokens=50, policy="srmic"):
+def run_sweep(model_name: str, prompt: str, hrm_budgets_gb: List[float], num_tokens: int = 50, policy: str = "srmic") -> Tuple[pd.DataFrame, List[Dict[str, Any]]]:
     """
-    Run inference with the tracer active, then replay the trace through the simulator.
+    Runs inference with the tracer active, then replays the access trace through 
+    the residency simulator at multiple HRM budget points.
     """
-    # 1. Load Model
+    # 1. Load Model and Trace
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.float16, device_map="cpu")
     
-    # 2. Trace Access
     tracer = WeightAccessTracer()
     tracer.attach(model)
     
     input_ids = tokenizer.encode(prompt, return_tensors="pt")
     
-    # Mock generation loop to capture each step
     print(f"Tracing {num_tokens} decode steps for {model_name}...")
     with torch.no_grad():
         current_ids = input_ids
@@ -36,26 +37,42 @@ def run_sweep(model_name, prompt, hrm_budgets_gb, num_tokens=50, policy="srmic")
     trace = tracer.get_trace()
     tracer.detach()
     
-    # 3. Replay Trace
+    # 2. Replay Trace and Compute Metrics
+    results = _replay_trace(trace, hrm_budgets_gb, policy)
+    
+    # 3. Monotonicity Validation
+    df = pd.DataFrame(results)
+    _validate_monotonicity(df)
+    
+    return df, trace
+
+def replay_trace_through_sim(trace: List[Dict[str, Any]], hrm_budgets_gb: List[float], policy: str = "srmic") -> pd.DataFrame:
+    """
+    Utility for replaying an existing trace (e.g. synthetic).
+    """
+    results = _replay_trace(trace, hrm_budgets_gb, policy)
+    df = pd.DataFrame(results)
+    _validate_monotonicity(df)
+    return df
+
+def _replay_trace(trace: List[Dict[str, Any]], hrm_budgets_gb: List[float], policy: str) -> List[Dict[str, Any]]:
     results = []
     
-    for budget_gb in hrm_budgets_gb:
-        sim = HRMResidencySimulator(budget_gb, num_regions=NUM_REGIONS, policy=policy)
+    # Compute working set size for speedup calculation
+    unique_tensors = {t['tensor_name']: t['size_bytes'] for t in trace}
+    working_set_bytes = sum(unique_tensors.values())
+    working_set_tb = working_set_bytes / (1024**4)
+    
+    for budget_gb in sorted(hrm_budgets_gb):
+        sim = HRMResidencySimulator(budget_gb, num_regions=NUM_REGIONS, policy=policy, page_size_mb=PAGE_SIZE_MB)
         for access in trace:
             sim.access(access['tensor_name'], access['size_bytes'], access['token_idx'])
             
         stats = sim.get_stats()
         
-        # Calculate speedup
+        # Speedup Calculation
         # T_hbm = working_set / HBM_BW
         # T_hrm = (working_set * miss_rate) / HBM_BW + (working_set * hit_rate) / SRMESH_BW
-        # speedup = T_hbm / T_hrm
-        #
-        # Note: 'working_set' can be approximated as the total size of unique tensors in the trace
-        unique_tensors = {t['tensor_name']: t['size_bytes'] for t in trace}
-        working_set_bytes = sum(unique_tensors.values())
-        working_set_tb = working_set_bytes / (1024**4)
-        
         t_hbm = working_set_tb / HBM_BW_TBPS
         t_hrm = (working_set_tb * stats['miss_rate']) / HBM_BW_TBPS + \
                 (working_set_tb * stats['hit_rate']) / SRMESH_BW_TBPS
@@ -66,61 +83,19 @@ def run_sweep(model_name, prompt, hrm_budgets_gb, num_tokens=50, policy="srmic")
             "hrm_budget_gb": budget_gb,
             "hit_rate": stats['hit_rate'],
             "miss_rate": stats['miss_rate'],
-            "promotions": stats['promotions'],
-            "demotions": stats['demotions'],
-            "working_set_gb": working_set_bytes / (1024**3),
+            "promotions": stats['promotion_count'],
+            "demotions": stats['demotion_count'],
+            "working_set_gb": stats['working_set_size_gb'],
             "effective_bw_reduction": stats['hit_rate'] * 100.0,
             "speedup_vs_hbm": speedup
         })
-        
-    return pd.DataFrame(results), trace
+    return results
 
-def run_synthetic_sweep(hrm_budgets_gb, num_tokens=100, policy="srmic"):
+def _validate_monotonicity(df: pd.DataFrame) -> None:
     """
-    Dry-run mode with synthetic Llama-3 8B access pattern.
+    Validates that hit_rate increases or stays same as budget increases.
     """
-    # 8B model: ~32 layers, active set per layer ~125MB (total 4GB)
-    num_layers = 32
-    layer_size = 125 * 1024**2 # 125MB
-    tensors_per_layer = 7 # q, k, v, o, up, gate, down
-    
-    trace = []
-    for token_idx in range(num_tokens):
-        for layer_idx in range(num_layers):
-            for t_idx in range(tensors_per_layer):
-                trace.append({
-                    'token_idx': token_idx,
-                    'tensor_name': f"layer_{layer_idx}_tensor_{t_idx}",
-                    'size_bytes': layer_size // tensors_per_layer,
-                })
-                
-    results = []
-    for budget_gb in hrm_budgets_gb:
-        sim = HRMResidencySimulator(budget_gb, num_regions=NUM_REGIONS, policy=policy)
-        for access in trace:
-            sim.access(access['tensor_name'], access['size_bytes'], access['token_idx'])
-            
-        stats = sim.get_stats()
-        
-        unique_tensors = {t['tensor_name']: t['size_bytes'] for t in trace}
-        working_set_bytes = sum(unique_tensors.values())
-        working_set_tb = working_set_bytes / (1024**4)
-        
-        t_hbm = working_set_tb / HBM_BW_TBPS
-        t_hrm = (working_set_tb * stats['miss_rate']) / HBM_BW_TBPS + \
-                (working_set_tb * stats['hit_rate']) / SRMESH_BW_TBPS
-        
-        speedup = t_hbm / t_hrm if t_hrm > 0 else 1.0
-        
-        results.append({
-            "hrm_budget_gb": budget_gb,
-            "hit_rate": stats['hit_rate'],
-            "miss_rate": stats['miss_rate'],
-            "promotions": stats['promotions'],
-            "demotions": stats['demotions'],
-            "working_set_gb": working_set_bytes / (1024**3),
-            "effective_bw_reduction": stats['hit_rate'] * 100.0,
-            "speedup_vs_hbm": speedup
-        })
-        
-    return pd.DataFrame(results), trace
+    hit_rates = df['hit_rate'].tolist()
+    for i in range(1, len(hit_rates)):
+        if hit_rates[i] < hit_rates[i-1] - 1e-6: # Float epsilon
+            print(f"WARNING: Non-monotonic hit rate detected: {hit_rates[i]} < {hit_rates[i-1]}")

@@ -11,23 +11,23 @@
     },
     {
         "hrm_budget_gb": 4,
-        "hit_rate": 0.310625,
-        "miss_rate": 0.6893750000000001,
-        "promotions": 7721,
-        "demotions": 7563,
+        "hit_rate": 0.284375,
+        "miss_rate": 0.715625,
+        "promotions": 8015,
+        "demotions": 7854,
         "working_set_gb": 3.906249910593033,
-        "effective_bw_reduction": 31.0625,
-        "speedup_vs_hbm": 1.303727846811978
+        "effective_bw_reduction": 28.4375,
+        "speedup_vs_hbm": 1.2711022840119166
     },
     {
         "hrm_budget_gb": 7,
-        "hit_rate": 0.888125,
-        "miss_rate": 0.11187499999999995,
-        "promotions": 1253,
-        "demotions": 1032,
+        "hit_rate": 0.84875,
+        "miss_rate": 0.15125,
+        "promotions": 1694,
+        "demotions": 1476,
         "working_set_gb": 3.906249910593033,
-        "effective_bw_reduction": 88.8125,
-        "speedup_vs_hbm": 2.994852597098737
+        "effective_bw_reduction": 84.875,
+        "speedup_vs_hbm": 2.7515047291487527
     },
     {
         "hrm_budget_gb": 10,
