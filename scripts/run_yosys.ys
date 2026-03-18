@@ -1,19 +1,14 @@
 # Yosys Synthesis Script for SRMIC-X1 Sanity Check
 # Runs from build/ directory via: cd build && yosys ../scripts/run_yosys.ys
-#
-# Note: srmesh_router uses dynamic part-selects unsupported by Yosys 0.33.
-# Core invention modules (ric, hrm_region) synthesize cleanly.
 
-# 1. Read core RTL modules
+# === Pass 1: Synthesize RIC ===
 read_verilog -sv -DSYNTHESIS ../rtl/ric.sv
-read_verilog -sv -DSYNTHESIS ../rtl/hrm_region.sv
-
-# 2. Synthesize each core module independently
 synth -top ric
 stat
+write_verilog ric_synth.v
 
+# === Pass 2: Synthesize HRM Region ===
+read_verilog -sv -DSYNTHESIS ../rtl/hrm_region.sv
 synth -top hrm_region
 stat
-
-# 3. Write netlists
-write_verilog srmic_synth.v
+write_verilog hrm_region_synth.v
