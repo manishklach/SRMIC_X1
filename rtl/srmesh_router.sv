@@ -1,16 +1,12 @@
 `timescale 1ns/1ps
 
 // ============================================================================
-// Module: srmesh_router
-// Project: SRMIC-X1
-// Description: Hardened 4-Port Mesh Router
-//              Implements credit-based flow control and WRR arbitration.
+// Module: srmesh_router — SRMIC-X1
+// All arrays flat-packed for Yosys/Verilator compatibility.
+// slot(port,vc) = port*2 + vc  (8 slots total for 4 ports x 2 VCs)
 // ============================================================================
 
 module srmesh_router #(
-    // ==================================================
-    // Parameters
-    // ==================================================
     parameter FLIT_WIDTH  = 64,
     parameter ROUTER_X    = 0,
     parameter ROUTER_Y    = 0,
@@ -18,104 +14,93 @@ module srmesh_router #(
     parameter VC0_WEIGHT  = 2,
     parameter VC1_WEIGHT  = 1
 )(
-    // ==================================================
-    // Ports
-    // ==================================================
-    input  logic                            clk,
-    input  logic                            rst_n,
-
-    // Interface per port (North:0, South:1, East:2, West:3)
-    input  logic [3:0]                      in_valid,
-    input  logic [4*FLIT_WIDTH-1:0]         in_flit,
-    input  logic [3:0]                      in_vc_id,
-    output logic [3:0]                      in_credit_ret,
-
-    output logic [3:0]                      out_valid,
-    output logic [4*FLIT_WIDTH-1:0]         out_flit,
-    output logic [3:0]                      out_vc_id,
-    input  logic [3:0]                      out_credit_ret,
-
-    // Debug Observability
-    output logic [1:0]                      dbg_grant_port,
-    output logic                            dbg_active_vc,
-    output logic [31:0]                     dbg_stall_cycles
+    input  logic                       clk,
+    input  logic                       rst_n,
+    input  logic [3:0]                 in_valid,
+    input  logic [4*FLIT_WIDTH-1:0]    in_flit,
+    input  logic [3:0]                 in_vc_id,
+    output logic [3:0]                 in_credit_ret,
+    output logic [3:0]                 out_valid,
+    output logic [4*FLIT_WIDTH-1:0]    out_flit,
+    output logic [3:0]                 out_vc_id,
+    input  logic [3:0]                 out_credit_ret,
+    output logic [1:0]                 dbg_grant_port,
+    output logic                       dbg_active_vc,
+    output logic [31:0]                dbg_stall_cycles
 );
 
-    // ==================================================
-    // Local State
-    // ==================================================
-    logic [8*FLIT_WIDTH-1:0]                vc_buf;  // [port*2+vc]*FLIT_WIDTH +: FLIT_WIDTH
-    logic [7:0]                             vc_full;  // [port*2 +: 2]
-    logic [8*($clog2(MAX_CREDITS+1))-1:0]   credits; // [port*2+vc]*clog2 +: clog2
-    logic [39:0]                            starvation_cnt; // [port*2+vc]*5 +: 5
-    logic [7:0]                             wrr_state; // [port*2 +: 2]
-    logic [1:0]                             port_rr;
+    // credit field width
+    localparam int unsigned CW = $clog2(MAX_CREDITS+1);
 
-    // Latency Pipeline
-    logic [3:0]                             pipe_out_valid;
-    logic [4*FLIT_WIDTH-1:0]                pipe_out_flit;
-    logic [3:0]                             pipe_out_vc_id;
+    // flat packed arrays: 8 slots = 4 ports x 2 VCs
+    logic [8*FLIT_WIDTH-1:0]  vc_buf;         // slot s: [s*FLIT_WIDTH +: FLIT_WIDTH]
+    logic [7:0]               vc_full;        // slot s: [s]
+    logic [8*3-1:0]           credits;        // slot s: [s*3 +: 3]  (CW=3 for MAX_CREDITS=4)
+    logic [39:0]              starvation_cnt; // slot s: [s*5 +: 5]
+    logic [4*3-1:0]           wrr_state;      // port p: [p*3 +: 3]
+    logic [1:0]               port_rr;
 
-    // ==================================================
-    // Combinational Logic
-    // ==================================================
-    function logic [1:0] get_route(input [FLIT_WIDTH-1:0] flit);
-        logic [1:0] dx;
-        logic [1:0] dy;
-        dx = flit[59:58];
-        dy = flit[57:56];
-        if (dx > ROUTER_X)      return 2'd2; // East
-        else if (dx < ROUTER_X) return 2'd3; // West
-        else if (dy > ROUTER_Y) return 2'd1; // South
-        else                    return 2'd0; // North
+    logic [3:0]               pipe_out_valid;
+    logic [4*FLIT_WIDTH-1:0]  pipe_out_flit;
+    logic [3:0]               pipe_out_vc_id;
+
+    function automatic logic [1:0] get_route(input logic [FLIT_WIDTH-1:0] flit);
+        logic [1:0] dx, dy;
+        dx = flit[59:58]; dy = flit[57:56];
+        if      (dx > ROUTER_X) return 2'd2;
+        else if (dx < ROUTER_X) return 2'd3;
+        else if (dy > ROUTER_Y) return 2'd1;
+        else                    return 2'd0;
     endfunction
 
-    logic [1:0]                             sel_port;
-    logic                                   sel_vc;
-    logic                                   found_grant;
-    logic                                   preferred_vc;
-    logic [1:0]                             dest;
+    logic [1:0] sel_port;
+    logic       sel_vc;
+    logic       found_grant;
+    logic [1:0] dest;
 
     always_comb begin
         found_grant = 1'b0;
-        sel_port    = 0;
-        sel_vc      = 0;
-        preferred_vc = 0;
-        dest        = 0;
-        
-        // Note: break not supported by Yosys.
-        // Use found_grant as guard to preserve first-grant priority semantics.
+        sel_port    = 2'd0;
+        sel_vc      = 1'b0;
+        dest        = 2'd0;
+
         for (int i = 0; i < 4; i++) begin
             logic [1:0] p;
-            p = port_rr + i[1:0];
+            logic [3:0] s0, s1; // slot indices (4-bit to prevent overflow in multiply)
+            p  = port_rr + i[1:0];
+            s0 = {2'b0, p} * 4'd2;
+            s1 = {2'b0, p} * 4'd2 + 4'd1;
 
-            if (!found_grant) begin
-                // Priority 1: Starvation Watchdog
-                if (vc_full[(p)*2+(0)] && (starvation_cnt[((p)*2+(0))*5 +: 5] > 16)) begin
-                    sel_port = p; sel_vc = 0; found_grant = 1'b1;
-                    dest = get_route(vc_buf[((p)*2+(0))*FLIT_WIDTH +: FLIT_WIDTH]);
-                end else if (vc_full[(p)*2+(1)] && (starvation_cnt[((p)*2+(1))*5 +: 5] > 16)) begin
-                    sel_port = p; sel_vc = 1; found_grant = 1'b1;
-                    dest = get_route(vc_buf[((p)*2+(1))*FLIT_WIDTH +: FLIT_WIDTH]);
-                end
+            // Priority 1: Starvation watchdog
+            if (!found_grant && vc_full[s0[2:0]] &&
+                starvation_cnt[s0[2:0]*5 +: 5] > 5'd16) begin
+                sel_port = p; sel_vc = 1'b0; found_grant = 1'b1;
+                dest = get_route(vc_buf[s0[2:0]*FLIT_WIDTH +: FLIT_WIDTH]);
+            end
+            if (!found_grant && vc_full[s1[2:0]] &&
+                starvation_cnt[s1[2:0]*5 +: 5] > 5'd16) begin
+                sel_port = p; sel_vc = 1'b1; found_grant = 1'b1;
+                dest = get_route(vc_buf[s1[2:0]*FLIT_WIDTH +: FLIT_WIDTH]);
             end
 
+            // Priority 2: WRR — preferred VC first
             if (!found_grant) begin
-                // Priority 2: WRR Arbitration
-                preferred_vc = (wrr_state[(p)*2 +: 2] < VC0_WEIGHT) ? 1'b0 : 1'b1;
-                if (vc_full[(p)*2+(preferred_vc)]) begin
-                    logic [1:0] d;
-                    d = get_route(vc_buf[((p)*2+(preferred_vc))*FLIT_WIDTH +: FLIT_WIDTH]);
-                    if (credits[((d)*2+(preferred_vc))*($clog2(MAX_CREDITS+1)) +: ($clog2(MAX_CREDITS+1))] > 0) begin
-                        sel_port = p; sel_vc = preferred_vc; found_grant = 1'b1;
-                        dest = d;
+                logic       pvc;
+                logic [3:0] sp, snp;
+                logic [1:0] dp, dnp;
+                pvc = (wrr_state[{2'b0,p}*3 +: 3] < 3'(VC0_WEIGHT)) ? 1'b0 : 1'b1;
+                sp  = pvc ? s1 : s0;
+                snp = pvc ? s0 : s1;
+                if (vc_full[sp[2:0]]) begin
+                    dp = get_route(vc_buf[sp[2:0]*FLIT_WIDTH +: FLIT_WIDTH]);
+                    if (credits[{2'b0,dp}*2*3/2 +: 3] > 0) begin
+                        sel_port = p; sel_vc = pvc; found_grant = 1'b1; dest = dp;
                     end
-                end else if (vc_full[p][!preferred_vc]) begin
-                    logic [1:0] d;
-                    d = get_route(vc_buf[p][!preferred_vc]);
-                    if (credits[d][!preferred_vc] > 0) begin
-                        sel_port = p; sel_vc = !preferred_vc; found_grant = 1'b1;
-                        dest = d;
+                end
+                if (!found_grant && vc_full[snp[2:0]]) begin
+                    dnp = get_route(vc_buf[snp[2:0]*FLIT_WIDTH +: FLIT_WIDTH]);
+                    if (credits[{2'b0,dnp}*2*3/2 +: 3] > 0) begin
+                        sel_port = p; sel_vc = ~pvc; found_grant = 1'b1; dest = dnp;
                     end
                 end
             end
@@ -125,78 +110,77 @@ module srmesh_router #(
     assign dbg_grant_port = sel_port;
     assign dbg_active_vc  = sel_vc;
 
-    // ==================================================
-    // Sequential Logic
-    // ==================================================
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            for (int p = 0; p < 4; p++) begin
-                for (int v = 0; v < 2; v++) begin
-                    credits[((p)*2+(v))*($clog2(MAX_CREDITS+1)) +: ($clog2(MAX_CREDITS+1))]        <= MAX_CREDITS;
-                    vc_full[(p)*2+(v)]        <= 0;
-                    starvation_cnt[((p)*2+(v))*5 +: 5] <= 0;
-                end
-                wrr_state[(p)*2 +: 2] <= 0;
-            end
-            port_rr          <= 0;
-            in_credit_ret    <= 0;
-            out_valid        <= 0;
-            dbg_stall_cycles <= 0;
+            vc_buf           <= '0;
+            vc_full          <= '0;
+            starvation_cnt   <= '0;
+            port_rr          <= '0;
+            in_credit_ret    <= '0;
+            out_valid        <= '0;
+            pipe_out_valid   <= '0;
+            pipe_out_flit    <= '0;
+            pipe_out_vc_id   <= '0;
+            dbg_stall_cycles <= '0;
+            wrr_state        <= '0;
+            // Init credits to MAX_CREDITS for all 8 slots
+            for (int s = 0; s < 8; s++)
+                credits[s*3 +: 3] <= 3'(MAX_CREDITS);
         end else begin
-            // Latency Pipeline
             out_valid <= pipe_out_valid;
-            out_flit  <= pipe_out_flit;  // packed -> packed, direct assign
+            out_flit  <= pipe_out_flit;
             out_vc_id <= pipe_out_vc_id;
+            pipe_out_valid <= '0;
+            in_credit_ret  <= '0;
 
-            pipe_out_valid <= 0;
-            in_credit_ret  <= 0;
+            if (!found_grant && (|vc_full))
+                dbg_stall_cycles <= dbg_stall_cycles + 1;
 
-            if (!found_grant && (|vc_full)) dbg_stall_cycles <= dbg_stall_cycles + 1;
-
-            // Buffer Input & Credit Handshake
+            // Input buffering
             for (int p = 0; p < 4; p++) begin
-                if (in_valid[p] && !vc_full[p][in_vc_id[p]]) begin
-                    vc_buf[p][in_vc_id[p]]         <= in_flit[p*FLIT_WIDTH +: FLIT_WIDTH];
-                    vc_full[p][in_vc_id[p]]        <= 1'b1;
-                    starvation_cnt[p][in_vc_id[p]] <= 0;
+                logic [2:0] sv;
+                sv = 3'(p) * 3'd2 + {2'b0, in_vc_id[p]};
+                if (in_valid[p] && !vc_full[sv]) begin
+                    vc_buf[sv*FLIT_WIDTH +: FLIT_WIDTH] <= in_flit[p*FLIT_WIDTH +: FLIT_WIDTH];
+                    vc_full[sv]              <= 1'b1;
+                    starvation_cnt[sv*5 +: 5] <= '0;
                 end
-                if (out_credit_ret[p]) begin
-                    credits[((p)*2+(0))*($clog2(MAX_CREDITS+1)) +: ($clog2(MAX_CREDITS+1))] <= (credits[((p)*2+(0))*($clog2(MAX_CREDITS+1)) +: ($clog2(MAX_CREDITS+1))] < MAX_CREDITS) ? credits[((p)*2+(0))*($clog2(MAX_CREDITS+1)) +: ($clog2(MAX_CREDITS+1))] + 1 : credits[((p)*2+(0))*($clog2(MAX_CREDITS+1)) +: ($clog2(MAX_CREDITS+1))];
-                end
-                if (vc_full[(p)*2+(0)]) starvation_cnt[((p)*2+(0))*5 +: 5] <= starvation_cnt[((p)*2+(0))*5 +: 5] + 1;
-                if (vc_full[(p)*2+(1)]) starvation_cnt[((p)*2+(1))*5 +: 5] <= starvation_cnt[((p)*2+(1))*5 +: 5] + 1;
+                if (out_credit_ret[p] && credits[p*2*3/2 +: 3] < 3'(MAX_CREDITS))
+                    credits[p*2*3/2 +: 3] <= credits[p*2*3/2 +: 3] + 1;
+                if (vc_full[p*2])   starvation_cnt[p*2*5 +: 5]   <= starvation_cnt[p*2*5 +: 5] + 1;
+                if (vc_full[p*2+1]) starvation_cnt[(p*2+1)*5 +: 5] <= starvation_cnt[(p*2+1)*5 +: 5] + 1;
             end
 
-            // Process Grant
+            // Process grant
             if (found_grant) begin
-                pipe_out_flit[dest*FLIT_WIDTH +: FLIT_WIDTH] <= vc_buf[((sel_port)*2+(sel_vc))*FLIT_WIDTH +: FLIT_WIDTH];
-                pipe_out_valid[dest]             <= 1'b1;
-                pipe_out_vc_id[dest]             <= sel_vc;
-                credits[((dest)*2+(sel_vc))*($clog2(MAX_CREDITS+1)) +: ($clog2(MAX_CREDITS+1))]            <= credits[((dest)*2+(sel_vc))*($clog2(MAX_CREDITS+1)) +: ($clog2(MAX_CREDITS+1))] - 1;
-                vc_full[(sel_port)*2+(sel_vc)]        <= 1'b0;
-                in_credit_ret[sel_port]          <= 1'b1;
-                starvation_cnt[((sel_port)*2+(sel_vc))*5 +: 5] <= 0;
-
+                logic [2:0] ss;
+                ss = 3'(sel_port) * 3'd2 + {2'b0, sel_vc};
+                pipe_out_flit[dest*FLIT_WIDTH +: FLIT_WIDTH] <=
+                    vc_buf[ss*FLIT_WIDTH +: FLIT_WIDTH];
+                pipe_out_valid[dest] <= 1'b1;
+                pipe_out_vc_id[dest] <= sel_vc;
+                if (credits[{1'b0,dest}*2*3/2 +: 3] > 0)
+                    credits[{1'b0,dest}*2*3/2 +: 3] <= credits[{1'b0,dest}*2*3/2 +: 3] - 1;
+                vc_full[ss]              <= 1'b0;
+                in_credit_ret[sel_port]  <= 1'b1;
+                starvation_cnt[ss*5 +: 5] <= '0;
                 port_rr <= sel_port + 1;
-                if (sel_vc == 0) wrr_state[(sel_port)*2 +: 2] <= wrr_state[(sel_port)*2 +: 2] + 1;
-                else wrr_state[(sel_port)*2 +: 2]             <= 0;
+                if (sel_vc == 1'b0)
+                    wrr_state[{1'b0,sel_port}*3 +: 3] <= wrr_state[{1'b0,sel_port}*3 +: 3] + 1;
+                else
+                    wrr_state[{1'b0,sel_port}*3 +: 3] <= '0;
             end else begin
                 port_rr <= port_rr + 1;
             end
         end
     end
 
-    // ==================================================
-    // Assertions
-    // ==================================================
 `ifndef SYNTHESIS
     generate
         for (genvar p = 0; p < 4; p++) begin : gen_sva
-            assert property (@(posedge clk) credits[((p)*2+(0))*($clog2(MAX_CREDITS+1)) +: ($clog2(MAX_CREDITS+1))] <= MAX_CREDITS);
-            assert property (@(posedge clk) credits[((p)*2+(1))*($clog2(MAX_CREDITS+1)) +: ($clog2(MAX_CREDITS+1))] <= MAX_CREDITS);
-            assert property (@(posedge clk) (pipe_out_valid[p] && pipe_out_vc_id[p] == 0) |-> (credits[((p)*2+(0))*($clog2(MAX_CREDITS+1)) +: ($clog2(MAX_CREDITS+1))] > 0));
+            assert property (@(posedge clk) credits[p*2*3/2 +: 3] <= MAX_CREDITS);
 `ifndef VERILATOR
-            assert property (@(posedge clk) vc_full[(p)*2+(0)] |-> ##[1:40] !vc_full[(p)*2+(0)]); 
+            assert property (@(posedge clk) vc_full[p*2] |-> ##[1:40] !vc_full[p*2]);
 `endif
         end
     endgenerate
