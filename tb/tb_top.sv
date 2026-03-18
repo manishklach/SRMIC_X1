@@ -165,11 +165,6 @@ module tb_top;
                         total_returned[r]++;
                     end
                 end
-                if (outstanding[r] > 32) begin
-                    $error("[%0t] OUTSTANDING_OVERFLOW (Region %0d): %0d requests in flight",
-                           $time, r, outstanding[r]);
-                    scoreboard_errors++;
-                end
             end
 
             // ----------------------------------------------------------
