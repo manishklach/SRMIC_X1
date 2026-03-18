@@ -1,4 +1,4 @@
-label,total_accesses,hit_rate,replica_hits,replica_gain,replica_count,bypass_count,remap_count,occupancy_skew,latency_proxy,regret_prevented
-X1_Baseline,51200,0.98533203125,0,0.0,0,0,0,0.26185718120687346,105404,0.0
-X2_Remap_Admission,51200,0.98916015625,0,0.0,0,298,2,0.25721254766774965,105812,212554.85593291378
-X2_Full_Replicated,51200,0.99267578125,180,0.0035415641908509593,32,118,2,0.1926280361285303,104372,147313.88956996865
+label,total_accesses,hit_rate,replica_gain,replica_count,bypass_count,remap_count,occupancy_skew,latency_proxy,regret_prevented
+X1_Baseline,38400,0.98046875,0.0,0,0,0,0.26185718120687346,79800,0.0
+X2_Remap_Admission,38400,0.988125,0.0,0,199,2,0.25721254766774965,79420,180531.23068794917
+X2_Full_Replicated,38400,0.988125,0.0,32,199,2,0.1926280361285303,79420,180531.23068794917

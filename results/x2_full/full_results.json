@@ -1,41 +1,38 @@
 [
     {
         "label": "X1_Baseline",
-        "total_accesses": 51200,
-        "hit_rate": 0.98533203125,
-        "replica_hits": 0,
+        "total_accesses": 38400,
+        "hit_rate": 0.98046875,
         "replica_gain": 0.0,
         "replica_count": 0,
         "bypass_count": 0,
         "remap_count": 0,
         "occupancy_skew": 0.26185718120687346,
-        "latency_proxy": 105404,
+        "latency_proxy": 79800,
         "regret_prevented": 0.0
     },
     {
         "label": "X2_Remap_Admission",
-        "total_accesses": 51200,
-        "hit_rate": 0.98916015625,
-        "replica_hits": 0,
+        "total_accesses": 38400,
+        "hit_rate": 0.988125,
         "replica_gain": 0.0,
         "replica_count": 0,
-        "bypass_count": 298,
+        "bypass_count": 199,
         "remap_count": 2,
         "occupancy_skew": 0.25721254766774965,
-        "latency_proxy": 105812,
-        "regret_prevented": 212554.85593291378
+        "latency_proxy": 79420,
+        "regret_prevented": 180531.23068794917
     },
     {
         "label": "X2_Full_Replicated",
-        "total_accesses": 51200,
-        "hit_rate": 0.99267578125,
-        "replica_hits": 180,
-        "replica_gain": 0.0035415641908509593,
+        "total_accesses": 38400,
+        "hit_rate": 0.988125,
+        "replica_gain": 0.0,
         "replica_count": 32,
-        "bypass_count": 118,
+        "bypass_count": 199,
         "remap_count": 2,
         "occupancy_skew": 0.1926280361285303,
-        "latency_proxy": 104372,
-        "regret_prevented": 147313.88956996865
+        "latency_proxy": 79420,
+        "regret_prevented": 180531.23068794917
     }
 ]
