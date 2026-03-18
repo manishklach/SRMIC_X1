@@ -258,6 +258,23 @@ module hrm_region #(
     // Assertions
     // ==================================================
 `ifndef SYNTHESIS
+    // Outstanding request counter formal invariant
+    logic [3:0] formal_outstanding;
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) formal_outstanding <= 0;
+        else begin
+            case ({req_accept, response_valid})
+                2'b10: formal_outstanding <= formal_outstanding + 1'b1;
+                2'b01: formal_outstanding <= formal_outstanding - 1'b1;
+                default: formal_outstanding <= formal_outstanding;
+            endcase
+        end
+    end
+    assert property (@(posedge clk) disable iff (!rst_n) 
+        formal_outstanding <= 4'd8);
+    assert property (@(posedge clk) disable iff (!rst_n)
+        response_valid |-> (formal_outstanding > 0));
+
     assert property (@(posedge clk) (req_accept && hit_comb) |-> valid_array[hit_index_comb]);
     assert property (@(posedge clk) demote_request |-> region_full);
 

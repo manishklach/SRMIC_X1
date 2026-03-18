@@ -95,6 +95,11 @@ module tb_top;
     logic [PAGE_ID_WIDTH-1:0] sb_unk_fifo [0:NUM_REGIONS-1][0:FIFO_DEPTH-1];
     int sb_unk_wr_ptr[0:NUM_REGIONS-1], sb_unk_rd_ptr[0:NUM_REGIONS-1], sb_unk_count[0:NUM_REGIONS-1];
 
+    // Outstanding request/response counter per region
+    int outstanding   [0:NUM_REGIONS-1];
+    int total_issued  [0:NUM_REGIONS-1];
+    int total_returned[0:NUM_REGIONS-1];
+
     srmic_top #(.PAGE_ID_WIDTH(PAGE_ID_WIDTH), .NUM_REGIONS(NUM_REGIONS)) dut (
         .clk(clk), .rst_n(rst_n),
         .perf_hit(perf_hit), .perf_miss(perf_miss),
@@ -137,7 +142,35 @@ module tb_top;
                 sb_state[i]=NOT_RESIDENT; sb_resident_pages[i]=0;
                 sb_region[i]=0; sb_timer[i]=0;
             end
+            for (int r=0; r<NUM_REGIONS; r++) begin
+                outstanding[r]    = 0;
+                total_issued[r]   = 0;
+                total_returned[r] = 0;
+            end
         end else begin
+
+            // Track outstanding requests
+            for (int r = 0; r < NUM_REGIONS; r++) begin
+                if (dbg_synth_access_valid && !dbg_access_stall[r]) begin
+                    outstanding[r]++;
+                    total_issued[r]++;
+                end
+                if (perf_hit[r] || perf_miss[r]) begin
+                    if (outstanding[r] == 0) begin
+                        $error("[%0t] OUTSTANDING_UNDERFLOW (Region %0d): response with no outstanding request",
+                               $time, r);
+                        scoreboard_errors++;
+                    end else begin
+                        outstanding[r]--;
+                        total_returned[r]++;
+                    end
+                end
+                if (outstanding[r] > 8) begin
+                    $error("[%0t] OUTSTANDING_OVERFLOW (Region %0d): %0d requests in flight",
+                           $time, r, outstanding[r]);
+                    scoreboard_errors++;
+                end
+            end
 
             // ----------------------------------------------------------
             // STEP 1: Classify request as HIT / MISS / UNKNOWN
@@ -383,6 +416,11 @@ module tb_top;
         $display("Hit rate:           %2.2f%%", hit_rate);
         $display("Miss rate:          %2.2f%%", miss_rate);
         $display("------------------------------------------------------------");
+        for (int r = 0; r < NUM_REGIONS; r++) begin
+            if (outstanding[r] != 0)
+                $display("WARN: Region %0d has %0d outstanding at end of sim", r, outstanding[r]);
+            $display("Region %0d: issued=%0d returned=%0d", r, total_issued[r], total_returned[r]);
+        end
         if (scoreboard_errors==0) $display("SRMIC RTL TEST: PASS");
         else                      $display("SRMIC RTL TEST: FAIL (%0d errors)", scoreboard_errors);
         $display("============================================================\n");
