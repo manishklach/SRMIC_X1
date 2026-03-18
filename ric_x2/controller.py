@@ -22,7 +22,7 @@ class RICX2:
         self.remap = RemapEngine(config.MAX_CAM_ENTRIES, config.REMAP_COOLDOWN_STEPS)
         self.admission = AdmissionController(config)
         
-        # Global object metadata store
+        # Global object metadata store - Instance isolated
         self.metadata: Dict[str, ObjectMetadata] = {}
 
     def _get_metadata(self, object_id: str, size: int) -> ObjectMetadata:
@@ -52,22 +52,22 @@ class RICX2:
         is_thrash = self.thrash.is_thrashing(event.object_id, event.decode_step, self.cfg.THRASH_WINDOW_STEPS)
         if is_thrash: obj.thrash_count += 1
 
-        # 3. Admission Decision
-        if self.occupancy.regions[rid].free_bytes < event.size_bytes:
-            # Identify victim (Simple FIFO for MVP)
-            if self.occupancy.regions[rid].resident_objects:
-                v_id = next(iter(self.occupancy.regions[rid].resident_objects))
-                v_obj = self._get_metadata(v_id, event.size_bytes)
-                
-                if not self.admission.should_admit(obj, v_obj, self.occupancy.regions[rid], event.decode_step):
-                    return AccessResult.MISS_BYPASSED
+        # 3. Admission Decision (X2 Feature - Gated by mode and config)
+        if self.x2_mode and self.cfg.ADMISSION_ENABLED:
+            if self.occupancy.regions[rid].free_bytes < event.size_bytes:
+                if self.occupancy.regions[rid].resident_objects:
+                    v_id = next(iter(self.occupancy.regions[rid].resident_objects))
+                    v_obj = self._get_metadata(v_id, event.size_bytes)
+                    
+                    if not self.admission.should_admit(obj, v_obj, self.occupancy.regions[rid], event.decode_step):
+                        return AccessResult.MISS_BYPASSED
 
         # 4. Reactive Remap Trigger (X2 only)
         if self.x2_mode and self.occupancy.regions[rid].occupancy_fraction > self.cfg.REMAP_OCC_THRESHOLD:
             target_rid = self.occupancy.get_coldest_region()
             self.remap.bind(event.object_id, target_rid, event.decode_step)
 
-        # 5. Eviction & Promotion
+        # 5. Eviction & Promotion (The fallback "dumb" path used by X1)
         while self.occupancy.regions[rid].free_bytes < event.size_bytes:
             if not self.occupancy.regions[rid].resident_objects: break
             v_id = next(iter(self.occupancy.regions[rid].resident_objects))

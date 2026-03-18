@@ -29,6 +29,19 @@ def generate_hot_trace(steps=50, model_mb=2048):
                 ))
     return trace
 
+def validate_baseline(summary):
+    """Fails the experiment if X1 baseline contains X2 metric leakage."""
+    leakage_detected = False
+    critical_metrics = ['bypass_rate', 'bypass_count', 'regret_prevented']
+    
+    for metric in critical_metrics:
+        if summary.get(metric, 0) != 0:
+            print(f"CRITICAL ERROR: Metric leakage in X1 Baseline! {metric} = {summary[metric]}")
+            leakage_detected = True
+            
+    if leakage_detected:
+        sys.exit(1)
+
 def main():
     # Use small regions to force collisions and trigger remapping/admission
     cfg = X2SimConfig(REGION_CAPACITY_MB=64)
@@ -37,11 +50,13 @@ def main():
     print(f"SRMIC-X2 MVP + Admission: Running experiment over {len(trace)} events...")
     experiment_results = []
 
-    # Scenario 1: X1 Baseline
+    # Scenario 1: X1 Baseline (Should have 0 admission metrics)
     print("-> Running X1 Baseline...")
     x1 = BaselineX1(cfg)
     res_x1 = TraceRunner(x1).run(trace)
-    experiment_results.append(X2Metrics.summarize(x1, res_x1, "X1_Baseline", cfg))
+    summary_x1 = X2Metrics.summarize(x1, res_x1, "X1_Baseline", cfg)
+    validate_baseline(summary_x1)
+    experiment_results.append(summary_x1)
     
     # Scenario 2: X2 Remap Only
     print("-> Running X2 Remap Only...")
