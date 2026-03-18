@@ -1,4 +1,4 @@
-# SRMIC-X1 v1.1 Hardened Addendum  
+# SRMIC-X1 v2.0 Hardened Addendum  
 ## Fabric Justification, SRAM Area Estimate, and Power Breakdown
 
 This addendum strengthens three sections of the SRMIC-X1 flagship architecture specification:

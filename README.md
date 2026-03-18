@@ -1,4 +1,4 @@
-# SRMIC v20
+# SRMIC v2.0
 ## Bounded Working-Set Model for Distributed SRAM-Backed Decode Acceleration
 
 > **Document status:** Analytical simulation — first-order latency model.
