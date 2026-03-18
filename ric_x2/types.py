@@ -8,6 +8,18 @@ class AccessResult(Enum):
     MISS_BYPASSED = 3
     EVICTED = 4
 
+@dataclass
+class ObjectMetadata:
+    """Historical telemetry for a specific weight tensor/page."""
+    object_id: str
+    size_bytes: int
+    access_count: int = 0
+    hit_count: int = 0
+    last_step: int = -1
+    last_evict_step: int = -1
+    thrash_count: int = 0
+    bypass_count: int = 0
+
 @dataclass(frozen=True)
 class TraceEvent:
     """Standardized event for the residency simulator."""
