@@ -41,8 +41,60 @@ SRMIC-X2 extends the Residency Intelligence Controller (RIC) with a two-tiered l
 - **Fast Path (Cycle-Accurate):** Executes parallel lookups in a Static Hash engine and a 256-entry hardware-proxy Remap CAM. This ensures O(1) routing latency for both baseline and remapped data.
 - **Slow Path (Policy Engine):** An engine that monitors telemetry (occupancy skew, miss rates, and eviction regret) to update the Remap CAM and trigger replication.
 
-[FIGURE: SRMIC-X2 controller overview block diagram]
-[FIGURE: per-access controller flow from access to hit/miss/bypass]
+### Figure 1: SRMIC-X2 Controller Architecture
+```text
+      +-----------------------------------------------------------+
+      |          RIC-X2 (Residency Intelligence Controller)       |
+      |                                                           |
+      |  +----------------+   +----------------+   +-----------+  |
+      |  | Remap Engine   |   | Admission Ctrl |   | Repl. Mgr |  |
+      |  | (256-entry CAM)|   | (Utility Gate) |   | (Cloning) |  |
+      |  +--------+-------+   +--------+-------+   +-----+-----+  |
+      |           |                    |                 |        |
+      |  +--------v--------------------v-----------------v-----+  |
+      |  |                 Control Logic Tier                  |  |
+      |  |  (Telemetry Monitor, Skew Analytics, Regret Score)  |  |
+      |  +--------------------------+--------------------------+  |
+      +-----------------------------|-----------------------------+
+                                    |
+      +-----------------------------v-----------------------------+
+      |                      HRM SRAM Tier                        |
+      |  (64 Regions, 96 TB/s SRMESH, Collision-Aware Routing)    |
+      +-----------------------------------------------------------+
+```
+
+### Figure 2: Per-Access Controller Flow
+```text
+          [ Start: Tensor Access Request ]
+                      |
+            +---------v---------+
+            | 1. Parallel Route |<--- [ Remap CAM ]
+            | (Hash vs CAM)     |
+            +---------+---------+
+                      | (Target Region ID)
+            +---------v---------+
+            | 2. Check Residency|
+            | (Primary + Replicas)|
+            +---------+---------+
+             /        |        \
+      (Hit) /         | (Miss)  \ (Hit Replica)
+     +-----v---+      |      +---v-------+
+     |   HIT   |      |      | HIT_REPL  |
+     +---------+      |      +-----------+
+                      |
+            +---------v---------+
+            | 3. Utility Gate   |
+            | (Regret Check)    |
+            +---------+---------+
+             /        |        \
+    (Bypass)/         | (Admit) \ (Remap Trigger)
+    +------v---+      |      +---v-------+
+    | BYPASS   |      |      | REMAP/PROM|
+    | (HBM)    |      |      | (SRAM)    |
+    +----------+      |      +-----------+
+                      |
+            [ 4. Evict & Promote ]
+```
 
 ## 6. Mechanism I: Collision-Aware Remap Control
 X2 employs **Reactive Remapping** to solve placement inefficiency. When the RIC detects that a specific region has breached an occupancy threshold and is experiencing misses, it identifies the requested tensor as a candidate for relocation. The controller finds the "coldest" region and binds the tensor to it via the Remap CAM. This flattens regional skew and allows the system to utilize the full aggregate capacity of the distributed mesh.
