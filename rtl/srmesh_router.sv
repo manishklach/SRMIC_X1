@@ -44,15 +44,8 @@ module srmesh_router #(
     logic [4*FLIT_WIDTH-1:0]  pipe_out_flit;
     logic [3:0]               pipe_out_vc_id;
 
-    function logic [1:0] get_route(input logic [FLIT_WIDTH-1:0] flit);
-        logic [1:0] dx, dy;
-        dx = flit[59:58]; dy = flit[57:56];
-	get_route = 2'd0;
-        if      (dx > ROUTER_X) return 2'd2;
-        else if (dx < ROUTER_X) return 2'd3;
-        else if (dy > ROUTER_Y) return 2'd1;
-        else                    return 2'd0;
-    endfunction
+    // get_route inlined as task-free expression (Yosys 0.33 compat)
+    // Usage: use gr_* signals computed per-call in always_comb
 
     logic [1:0] sel_port;
     logic       sel_vc;
@@ -76,12 +69,12 @@ module srmesh_router #(
             if (!found_grant && vc_full[s0[2:0]] &&
                 starvation_cnt[s0[2:0]*5 +: 5] > 5'd16) begin
                 sel_port = p; sel_vc = 1'b0; found_grant = 1'b1;
-                dest = get_route(vc_buf[s0[2:0]*FLIT_WIDTH +: FLIT_WIDTH]);
+                dest = ((vc_buf[s0[2:0]*FLIT_WIDTH +: FLIT_WIDTH][59:58] > ROUTER_X) ? 2'd2 : ((vc_buf[s0[2:0]*FLIT_WIDTH +: FLIT_WIDTH][59:58] < ROUTER_X) ? 2'd3 : ((vc_buf[s0[2:0]*FLIT_WIDTH +: FLIT_WIDTH][57:56] > ROUTER_Y) ? 2'd1 : 2'd0)));
             end
             if (!found_grant && vc_full[s1[2:0]] &&
                 starvation_cnt[s1[2:0]*5 +: 5] > 5'd16) begin
                 sel_port = p; sel_vc = 1'b1; found_grant = 1'b1;
-                dest = get_route(vc_buf[s1[2:0]*FLIT_WIDTH +: FLIT_WIDTH]);
+                dest = ((vc_buf[s1[2:0]*FLIT_WIDTH +: FLIT_WIDTH][59:58] > ROUTER_X) ? 2'd2 : ((vc_buf[s1[2:0]*FLIT_WIDTH +: FLIT_WIDTH][59:58] < ROUTER_X) ? 2'd3 : ((vc_buf[s1[2:0]*FLIT_WIDTH +: FLIT_WIDTH][57:56] > ROUTER_Y) ? 2'd1 : 2'd0)));
             end
 
             // Priority 2: WRR — preferred VC first
@@ -93,13 +86,13 @@ module srmesh_router #(
                 sp  = pvc ? s1 : s0;
                 snp = pvc ? s0 : s1;
                 if (vc_full[sp[2:0]]) begin
-                    dp = get_route(vc_buf[sp[2:0]*FLIT_WIDTH +: FLIT_WIDTH]);
+                    dp = ((vc_buf[sp[2:0]*FLIT_WIDTH +: FLIT_WIDTH][59:58] > ROUTER_X) ? 2'd2 : ((vc_buf[sp[2:0]*FLIT_WIDTH +: FLIT_WIDTH][59:58] < ROUTER_X) ? 2'd3 : ((vc_buf[sp[2:0]*FLIT_WIDTH +: FLIT_WIDTH][57:56] > ROUTER_Y) ? 2'd1 : 2'd0)));
                     if (credits[{2'b0,dp}*2*3/2 +: 3] > 0) begin
                         sel_port = p; sel_vc = pvc; found_grant = 1'b1; dest = dp;
                     end
                 end
                 if (!found_grant && vc_full[snp[2:0]]) begin
-                    dnp = get_route(vc_buf[snp[2:0]*FLIT_WIDTH +: FLIT_WIDTH]);
+                    dnp = ((vc_buf[snp[2:0]*FLIT_WIDTH +: FLIT_WIDTH][59:58] > ROUTER_X) ? 2'd2 : ((vc_buf[snp[2:0]*FLIT_WIDTH +: FLIT_WIDTH][59:58] < ROUTER_X) ? 2'd3 : ((vc_buf[snp[2:0]*FLIT_WIDTH +: FLIT_WIDTH][57:56] > ROUTER_Y) ? 2'd1 : 2'd0)));
                     if (credits[{2'b0,dnp}*2*3/2 +: 3] > 0) begin
                         sel_port = p; sel_vc = ~pvc; found_grant = 1'b1; dest = dnp;
                     end
