@@ -32,7 +32,9 @@ class X2SimConfig:
     MAX_TOTAL_REPLICAS: int = 64
     MAX_REPLICAS_PER_OBJECT: int = 2 # Allow 2 replicas for high fanout
     HOT_OBJECT_ACCESS_THRESHOLD: int = 5
+    HOT_OBJECT_MIN_STEPS: int = 3
     REPLICATION_PRESSURE_THRESHOLD: float = 0.50
+    REPLICA_IDLE_STEPS: int = 8
     
     # Routing Refinement
     PRESSURE_AWARE_ROUTING: bool = True

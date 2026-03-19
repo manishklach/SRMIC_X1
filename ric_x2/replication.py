@@ -25,6 +25,10 @@ class ReplicationEngine:
         if obj.access_count < self.cfg.HOT_OBJECT_ACCESS_THRESHOLD:
             return False
 
+        # Persistence signal: avoid replicating short-lived bursts
+        if obj.active_step_count < self.cfg.HOT_OBJECT_MIN_STEPS:
+            return False
+
         # Pressure signal: regional load
         if region.occupancy_fraction < self.cfg.REPLICATION_PRESSURE_THRESHOLD:
             return False
@@ -36,5 +40,12 @@ class ReplicationEngine:
         if target_rid not in obj.replica_rids:
             obj.replica_rids.add(target_rid)
             self.total_replica_count += 1
+            return True
+        return False
+
+    def release_replica(self, obj: ObjectMetadata, target_rid: int) -> bool:
+        if target_rid in obj.replica_rids:
+            obj.replica_rids.remove(target_rid)
+            self.total_replica_count = max(0, self.total_replica_count - 1)
             return True
         return False
