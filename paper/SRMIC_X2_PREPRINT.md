@@ -98,15 +98,13 @@ SRMIC-X2 extends the Residency Intelligence Controller (RIC) with a two-tiered l
 
 ## 6. Mechanism I: Collision-Aware Remap Control
 X2 employs **Reactive Remapping** to solve placement inefficiency. When the RIC detects that a specific region has breached an occupancy threshold and is experiencing misses, it identifies the requested tensor as a candidate for relocation. The controller finds the "coldest" region and binds the tensor to it via the Remap CAM. This flattens regional skew and allows the system to utilize the full aggregate capacity of the distributed mesh.
-
-[RESULT: remap improved load balancing by reducing occupancy skew by [X]%]
+On the reference dense synthetic trace, remap + admission reduces occupancy skew from 0.262 to 0.250, while full X2 reduces it further to 0.147. On public real traces, remap activity remains active across all tested models, indicating that static placement pathologies persist outside synthetic stress cases.
 
 ## 7. Mechanism II: Regret-Aware Admission and Bypass
 X2 introduces an **Admission Gate**. Instead of automatically promoting every miss, the RIC evaluates the "Utility" of the resident victim vs. the incoming object.
 
 The utility heuristic $U$ accounts for access frequency and recency. If the "Regret Gap" ($U_{victim} - U_{incoming}$) exceeds a threshold, the controller serves the access directly from HBM (`MISS_BYPASSED`), preserving the high-value resident weight. This protects the core working set from being polluted by transient data.
-
-[RESULT: admission control reduced thrash events by [X]% compared to X1 baseline]
+In the current branch, admission is the most reliable source of real-trace gains. Across the three public OPT runs, the admission-enabled policy consistently produces the highest replay speedup and hit rate.
 
 ## 8. Mechanism III: Selective Hot-Object Replication
 In scenarios where remapping and admission are insufficient—specifically when a single tensor's bandwidth demand exceeds a single region's capability—X2 permits **Selective Replication**.
@@ -120,8 +118,22 @@ Our evaluation uses a trace-driven residency simulator validated against the SRM
 - **Metrics:** We track Useful Hit Rate, Occupancy Skew ($\sigma$), Thrash Count, a Latency Proxy (cycles), and HBM-relative speedup from trace replay.
 - **Integrity:** The harness now enforces deterministic hashing and deterministic victim selection to allow repeatable comparisons.
 
-[TABLE: Stress trace family characteristics]
-[TABLE: Metric definitions and formulas]
+### Table 1: Synthetic Stress Families
+
+| Workload | Intent | Main failure mode exercised |
+| :--- | :--- | :--- |
+| `HOTSPOT_FANOUT` | Concentrated demand on a tiny hot set | Single-region bandwidth saturation |
+| `BURST_CONTENTION` | Short bursts over a moderate hot set | Overreaction to transient pressure |
+| `HOTSET_ROTATION` | Hot identities change by phase | Stale residency and replica poisoning |
+
+### Table 2: Metrics
+
+| Metric | Definition | Purpose |
+| :--- | :--- | :--- |
+| Hit Rate | Fraction of accesses served from HRM | Primary residency efficiency measure |
+| Occupancy Skew | Std. dev. of per-region occupancy | Placement balance |
+| Latency Proxy | Access-weighted cycle model with congestion penalty | Relative controller comparison |
+| Speedup vs HBM | Replay-derived HBM-relative speedup | Workload-level performance summary |
 
 ## 10. Experimental Results
 ### 10.1 X2 over X1 Baseline
@@ -153,7 +165,26 @@ SRMIC-X2 addresses the fundamental scaling challenges of residency-first inferen
 
 ---
 **Appendix A: Policy Pseudocode**
-[PLACEHOLDER]
+```text
+on access(object):
+    rid = remap_cam.lookup(object) else static_hash(object)
+    if object resident in primary or replica:
+        route to least-loaded resident copy
+        if object remains hot and pressure persists:
+            consider bounded replication
+        return HIT
+
+    if region pressured:
+        victim = deterministic victim selection
+        if utility(victim) - utility(object) > threshold:
+            return BYPASS
+
+    if region remains overloaded:
+        bind remap entry to colder region
+
+    promote object
+    return MISS_PROMOTED
+```
 
 **Appendix B: Reproducibility Notes**
-Code and reproducible traces are available in the project repository under the `feature/srmic-x2-controller` branch.
+Code, deterministic synthetic experiments, and public-model trace-replay studies are available in the project repository under the `feature/srmic-x2-controller` branch. The current real-trace results correspond to `facebook/opt-125m`, `facebook/opt-350m`, and `facebook/opt-1.3b` replayed through `srmic`, `x2_admission`, and `x2_full`.
