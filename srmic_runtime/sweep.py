@@ -2,14 +2,22 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from typing import List, Dict, Any, Tuple, Optional
 import pandas as pd
+from collections import defaultdict
 from .tracer import WeightAccessTracer
 from .residency_sim import HRMResidencySimulator
+from ric_x2.controller import RICX2
+from ric_x2.types import AccessResult, TraceEvent
+from sim_x2.baseline_x1 import BaselineX1
+from sim_x2.config import X2SimConfig
+from sim_x2.trace_runner import TraceRunner
+from telemetry.metrics import X2Metrics
 
 # KEY ARCHITECTURAL CONSTANTS (from SRMIC-X1 spec)
 HBM_BW_TBPS = 24.0      # TB/s aggregate
 SRMESH_BW_TBPS = 96.0   # TB/s aggregate  
 NUM_REGIONS = 64        # logical HRM regions (flagship)
 PAGE_SIZE_MB = 2        # default page size
+SUPPORTED_POLICIES = ["lru", "hotness", "srmic", "x1_baseline", "x2_admission", "x2_full"]
 
 def run_sweep(
     model_name: str, 
@@ -67,7 +75,8 @@ def run_sweep(
     
     # 3. Monotonicity Validation
     df = pd.DataFrame(results)
-    _validate_monotonicity(df)
+    if policy in {"lru", "hotness", "srmic"}:
+        _validate_monotonicity(df)
     
     return df, trace
 
@@ -77,7 +86,8 @@ def replay_trace_through_sim(trace: List[Dict[str, Any]], hrm_budgets_gb: List[f
     """
     results = _replay_trace(trace, hrm_budgets_gb, policy)
     df = pd.DataFrame(results)
-    _validate_monotonicity(df)
+    if policy in {"lru", "hotness", "srmic"}:
+        _validate_monotonicity(df)
     return df
 
 def _replay_trace(trace: List[Dict[str, Any]], hrm_budgets_gb: List[float], policy: str) -> List[Dict[str, Any]]:
@@ -103,11 +113,10 @@ def _replay_trace(trace: List[Dict[str, Any]], hrm_budgets_gb: List[float], poli
     avg_active_working_set_gb = (sum(per_token_working_set_bytes) / len(per_token_working_set_bytes)) / (1024**3) if per_token_working_set_bytes else 0
     
     for budget_gb in sorted(hrm_budgets_gb):
-        sim = HRMResidencySimulator(budget_gb, num_regions=NUM_REGIONS, policy=policy, page_size_mb=PAGE_SIZE_MB)
-        for access in trace:
-            sim.access(access['tensor_name'], access['size_bytes'], access['token_idx'])
-            
-        stats = sim.get_stats()
+        if policy in {"lru", "hotness", "srmic"}:
+            stats = _run_x1_policy(trace, budget_gb, policy)
+        else:
+            stats = _run_x2_policy(trace, budget_gb, policy)
         
         # Speedup Calculation
         # T_hbm = working_set / HBM_BW
@@ -127,11 +136,55 @@ def _replay_trace(trace: List[Dict[str, Any]], hrm_budgets_gb: List[float], poli
             "working_set_gb": avg_active_working_set_gb,
             "total_model_gb": total_model_bytes / (1024**3),
             "effective_bw_reduction": stats['hit_rate'] * 100.0,
-            "speedup_vs_hbm": speedup
+            "speedup_vs_hbm": speedup,
+            "policy": policy,
+            "latency_proxy": stats.get("latency_proxy"),
+            "replica_count": stats.get("replica_count", 0),
+            "bypass_count": stats.get("bypass_count", 0),
+            "remap_count": stats.get("remap_count", 0),
+            "occupancy_skew": stats.get("occupancy_skew"),
         })
     return results
 
-from collections import defaultdict
+def _run_x1_policy(trace: List[Dict[str, Any]], budget_gb: float, policy: str) -> Dict[str, Any]:
+    sim = HRMResidencySimulator(budget_gb, num_regions=NUM_REGIONS, policy=policy, page_size_mb=PAGE_SIZE_MB)
+    for access in trace:
+        sim.access(access['tensor_name'], access['size_bytes'], access['token_idx'])
+    return sim.get_stats()
+
+
+def _run_x2_policy(trace: List[Dict[str, Any]], budget_gb: float, policy: str) -> Dict[str, Any]:
+    budget_bytes = int(budget_gb * 1024**3)
+    per_region_bytes = max(1, budget_bytes // NUM_REGIONS)
+    cfg = X2SimConfig(
+        NUM_REGIONS=NUM_REGIONS,
+        REGION_CAPACITY_BYTES_OVERRIDE=per_region_bytes,
+        REPLICATION_ENABLED=(policy == "x2_full"),
+    )
+    events = [
+        TraceEvent(
+            decode_step=access["token_idx"],
+            object_id=access["tensor_name"],
+            size_bytes=access["size_bytes"],
+        )
+        for access in trace
+    ]
+    controller = (
+        BaselineX1(cfg) if policy == "x1_baseline" else RICX2(cfg, x2_mode=True)
+    )
+    results = TraceRunner(controller).run(events)
+    summary = X2Metrics.summarize(controller, results, policy, cfg)
+    return {
+        "hit_rate": summary["hit_rate"],
+        "miss_rate": 1.0 - summary["hit_rate"],
+        "promotion_count": results.count(AccessResult.MISS_PROMOTED),
+        "demotion_count": controller.total_evictions,
+        "latency_proxy": summary["latency_proxy"],
+        "replica_count": summary["replica_count"],
+        "bypass_count": summary["bypass_count"],
+        "remap_count": summary["remap_count"],
+        "occupancy_skew": summary["occupancy_skew"],
+    }
 
 def _validate_monotonicity(df: pd.DataFrame) -> None:
     """

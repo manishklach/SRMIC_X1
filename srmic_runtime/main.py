@@ -12,7 +12,13 @@ def main():
     parser.add_argument("--prompt", type=str, default="Explain the memory wall in AI inference", help="Prompt for tracing")
     parser.add_argument("--tokens", type=int, default=100, help="Number of tokens to generate")
     parser.add_argument("--hrm-budgets", type=float, nargs="+", default=[0.5, 1, 2, 4, 7, 10, 16], help="HRM budgets in GB to sweep")
-    parser.add_argument("--policy", type=str, default="srmic", choices=["lru", "hotness", "srmic"], help="Eviction policy")
+    parser.add_argument(
+        "--policy",
+        type=str,
+        default="srmic",
+        choices=["lru", "hotness", "srmic", "x1_baseline", "x2_admission", "x2_full"],
+        help="Replay policy",
+    )
     parser.add_argument("--output", type=str, default="results/", help="Output directory")
     parser.add_argument("--dry-run", action="store_true", help="Use synthetic trace for testing")
     parser.add_argument("--seed", type=int, default=1234, help="Random seed for reproducibility")

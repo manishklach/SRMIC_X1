@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Optional
 
 @dataclass
 class X2SimConfig:
@@ -6,6 +7,7 @@ class X2SimConfig:
     # Architecture
     NUM_REGIONS: int = 64
     REGION_CAPACITY_MB: int = 32 # Increased from 4MB to allow multiple tensors
+    REGION_CAPACITY_BYTES_OVERRIDE: Optional[int] = None
     
     # Latencies (Base)
     LATENCY_HIT: int = 2
@@ -47,4 +49,6 @@ class X2SimConfig:
 
     @property
     def region_capacity_bytes(self) -> int:
+        if self.REGION_CAPACITY_BYTES_OVERRIDE is not None:
+            return self.REGION_CAPACITY_BYTES_OVERRIDE
         return self.REGION_CAPACITY_MB * 1024 * 1024

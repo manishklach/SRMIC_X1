@@ -15,6 +15,7 @@ def main():
     parser.add_argument("--models", type=str, nargs="+", default=["meta-llama/Llama-3.2-1B"], help="List of models to compare")
     parser.add_argument("--hrm-budgets", type=float, nargs="+", default=[1, 4, 7], help="HRM budgets to test")
     parser.add_argument("--tokens", type=int, default=30, help="Tokens to generate for each model")
+    parser.add_argument("--policies", type=str, nargs="+", default=["srmic"], help="Replay policies to compare")
     parser.add_argument("--output", type=str, default="studies/runtime/multi_model_comparison/", help="Output directory")
     
     args = parser.parse_args()
@@ -26,28 +27,35 @@ def main():
     for model_name in args.models:
         print(f"\nEvaluating Model: {model_name}")
         try:
-            df, trace = run_sweep(
-                model_name, 
-                "Explain why transformer inference is memory bound.", 
-                args.hrm_budgets, 
-                num_tokens=args.tokens
-            )
-            df['model'] = model_name
-            all_results.append(df)
+            reference_trace = None
+            for policy in args.policies:
+                if reference_trace is None:
+                    df, reference_trace = run_sweep(
+                        model_name,
+                        "Explain why transformer inference is memory bound.",
+                        args.hrm_budgets,
+                        num_tokens=args.tokens,
+                        policy=policy,
+                    )
+                else:
+                    df = replay_trace_through_sim(reference_trace, args.hrm_budgets, policy=policy)
+                df['model'] = model_name
+                all_results.append(df)
         except Exception as e:
             print(f"Error evaluating {model_name}: {e}")
             
     if not all_results:
         print("No models were successfully evaluated. Falling back to synthetic baseline for CI.")
         trace = generate_synthetic_trace(num_tokens=args.tokens, model_type="llama-3-8b")
-        df = replay_trace_through_sim(trace, args.hrm_budgets, policy="srmic")
-        df['model'] = "Synthetic-Llama-3-8B"
-        all_results.append(df)
+        for policy in args.policies:
+            df = replay_trace_through_sim(trace, args.hrm_budgets, policy=policy)
+            df['model'] = "Synthetic-Llama-3-8B"
+            all_results.append(df)
 
     comparison_df = pd.concat(all_results)
     
     # Generate Comparison Table
-    pivot_df = comparison_df.pivot(index='model', columns='hrm_budget_gb', values='speedup_vs_hbm')
+    pivot_df = comparison_df.pivot_table(index=['model', 'policy'], columns='hrm_budget_gb', values='speedup_vs_hbm')
     print("\nSpeedup Comparison Table (vs HBM-only):")
     print(pivot_df)
     

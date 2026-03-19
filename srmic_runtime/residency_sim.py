@@ -1,6 +1,7 @@
 from collections import OrderedDict, defaultdict
 from typing import Dict, List, Any, Optional, Union
 import math
+import hashlib
 
 class HRMResidencySimulator:
     """
@@ -37,7 +38,7 @@ class HRMResidencySimulator:
         """
         Deterministic mapping of tensor to region using a consistent hash.
         """
-        return hash(tensor_name) % self.num_regions
+        return int(hashlib.md5(tensor_name.encode()).hexdigest(), 16) % self.num_regions
 
     def access(self, tensor_name: str, size_bytes: int, token_idx: int) -> str:
         """

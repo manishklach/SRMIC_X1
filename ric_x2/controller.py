@@ -26,6 +26,7 @@ class RICX2:
         
         # Snapshot of congestion penalties per access
         self.step_congestion_penalties = 0
+        self.total_evictions = 0
 
     def _select_victim_id(self, rid: int) -> Optional[str]:
         candidates = self.occupancy.get_resident_objects_by_coldness(rid)
@@ -159,4 +160,5 @@ class RICX2:
             self.occupancy.remove(v_id, rid)
             self.thrash.record_eviction(v_id, event.decode_step)
             v_obj.last_evict_step = event.decode_step
+            self.total_evictions += 1
         self.occupancy.add(event, rid)
