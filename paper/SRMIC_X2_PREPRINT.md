@@ -4,7 +4,7 @@
 **Date:** March 2026  
 
 ## Abstract
-Autoregressive Large Language Model (LLM) inference is characterized by extreme memory-bandwidth bottlenecks during the decode phase. The SRMIC-X1 architecture previously established the feasibility of an SRAM-backed "Residency-First" tier to mitigate High Bandwidth Memory (HBM) pressure. However, naive distributed residency tiers suffer from regional hash collisions and residency pollution, capping effective utilization. We propose SRMIC-X2, an intelligent controller-centric extension that introduces three collaborative mechanisms: (1) Reactive Remapping via a hardware-proxy CAM to resolve regional hotspots, (2) Regret-Aware Admission Control to prevent low-utility weights from displacing high-reuse resident data, and (3) Selective Hot-Object Replication to provide bandwidth relief for ultra-hot tensors. Using a trace-driven evaluation framework across 1B to 7B parameter models, we demonstrate that collision-aware remapping reduces occupancy skew by [RESULT: insert skew delta, typically ~26%], while regret-aware admission reduces destructive thrashing by [RESULT: insert thrash reduction percentage]. We find that selective replication provides significant incremental gains in specific static hotspot scenarios but remains workload-sensitive in highly dynamic execution phases. Our results support the thesis that residency intelligence is a critical architectural layer for next-generation inference accelerators.
+Autoregressive Large Language Model (LLM) inference is characterized by extreme memory-bandwidth bottlenecks during the decode phase. The SRMIC-X1 architecture previously established the feasibility of an SRAM-backed "Residency-First" tier to mitigate High Bandwidth Memory (HBM) pressure. However, naive distributed residency tiers suffer from regional hash collisions and residency pollution, capping effective utilization. We propose SRMIC-X2, an intelligent controller-centric extension that introduces three collaborative mechanisms: (1) Reactive Remapping via a hardware-proxy CAM to resolve regional hotspots, (2) Regret-Aware Admission Control to prevent low-utility weights from displacing high-reuse resident data, and (3) Selective Hot-Object Replication to provide bandwidth relief for ultra-hot tensors. Using a trace-driven evaluation framework with deterministic synthetic stress traces and initial real decode traces from public OPT models, we find that remap + admission is the strongest and most robust policy tier. On real-trace replay, `x2_admission` improves speedup from 1.29x to 1.71x on `OPT-125m` at 0.2 GB HRM and from 1.19x to 1.45x on `OPT-350m` at 0.4 GB HRM, relative to the legacy static policy. These results support the thesis that residency intelligence is a critical architectural layer for next-generation inference accelerators, while also indicating that replication should currently be treated as a secondary optimization rather than the primary result.
 
 ## 1. Introduction
 The computational efficiency of Large Language Model (LLM) serving is currently dominated by the "Memory Wall." During the decode phase, the arithmetic intensity is low, meaning the tokens-per-second metric is dictated by the rate at which model weights can be fetched from High Bandwidth Memory (HBM).
@@ -115,35 +115,35 @@ The controller clones ultra-high-utility objects into secondary regions. Future 
 
 ## 9. Evaluation Methodology
 Our evaluation uses a trace-driven residency simulator validated against the SRMIC-X1 baseline. 
-- **Workloads:** We employ four stress-trace families: `HOTSPOT_FANOUT`, `BURST_CONTENTION`, `PERSISTENT_IMBALANCE`, and `HOTSET_ROTATION`.
-- **Metrics:** We track Useful Hit Rate, Occupancy Skew ($\sigma$), Thrash Count, and a Latency Proxy (cycles) that includes a regional congestion penalty.
-- **Integrity:** The harness ensures fresh isolated state for each run and enforces deterministic hashing to allow repeatable comparisons.
+- **Synthetic workloads:** We employ three stress-trace families: `HOTSPOT_FANOUT`, `BURST_CONTENTION`, and `HOTSET_ROTATION`.
+- **Real traces:** We capture decode-time weight-access traces from public Hugging Face models and replay the exact same trace through `srmic`, `x2_admission`, and `x2_full`.
+- **Metrics:** We track Useful Hit Rate, Occupancy Skew ($\sigma$), Thrash Count, a Latency Proxy (cycles), and HBM-relative speedup from trace replay.
+- **Integrity:** The harness now enforces deterministic hashing and deterministic victim selection to allow repeatable comparisons.
 
 [TABLE: Stress trace family characteristics]
 [TABLE: Metric definitions and formulas]
 
 ## 10. Experimental Results
 ### 10.1 X2 over X1 Baseline
-SRMIC-X2 demonstrates a significant improvement in hit-rate stability over the X1 baseline.
-[RESULT: X2 achieved a [X]% higher hit rate than X1 at identical capacity]
+SRMIC-X2 demonstrates a significant improvement in hit-rate stability over the X1 baseline on both synthetic and initial real-trace workloads. On `facebook/opt-125m`, `x2_admission` improves replay speedup from 1.29x to 1.71x at 0.2 GB HRM. On `facebook/opt-350m`, `x2_admission` improves replay speedup from 1.19x to 1.45x at 0.4 GB HRM.
 
 ### 10.2 Load Balancing and Remap Efficiency
 Reactive remapping successfully resolved primary capacity hotspots. 
-[RESULT: occupancy skew was reduced from [X] to [Y] using 256 CAM entries]
+On the reference synthetic trace, occupancy skew improves from 0.262 in the baseline to 0.250 with remap + admission and to 0.147 with full X2 enabled. On real traces, remap activity remains substantial in the strongest policy mode, with 12 remaps on `OPT-125m` at 0.2 GB and 40 remaps on `OPT-350m` at 0.4 GB.
 
 ### 10.3 Admission Control and Thrash Mitigation
 The admission controller is the primary driver of residency protection.
-[RESULT: bypass rate of [X]% resulted in a [Y]% reduction in latency proxy by avoiding resident displacement]
+The admission controller is the primary driver of the current real-trace gains. On `OPT-125m` at 0.2 GB, `x2_admission` issues 176 bypasses and reaches 55.5% hit rate versus 30.3% for `srmic`. On `OPT-350m` at 0.4 GB, it issues 460 bypasses and reaches 41.2% hit rate versus 21.1% for `srmic`.
 
 ### 10.4 Replication and Workload Sensitivity
 Replication provided measurable gains in the `HOTSPOT_FANOUT` workload.
-[RESULT: replication achieved a [X]% additional latency reduction on specific static hotspots]
+Replication still provides a measurable gain in the `HOTSPOT_FANOUT` workload, reducing synthetic latency proxy by 5.7%. However, in the initial real-trace experiments it trails `x2_admission`, reaching 1.54x versus 1.71x on `OPT-125m` and 1.41x versus 1.45x on `OPT-350m`. Replication should therefore be positioned as a secondary optimization layer.
 
 ## 11. Discussion
 The results confirm that residency intelligence is a critical layer for tiered memory systems. Remapping and admission control appear to be the most robust mechanisms across workloads. Selective replication acts as a "safety valve" for extreme hotspots, though its use must be utility-gated to avoid capacity dilution. A hybrid static/dynamic routing model appears to be the optimal path for distributed inference silicon.
 
 ## 12. Limitations
-Our current evaluation is trace-driven and relies on a latency proxy rather than a cycle-accurate hardware simulation. Furthermore, the utility heuristics rely on tunable weights that may require different optimization for diverse model families (e.g., Sparse Mixture-of-Experts). 
+Our current evaluation is trace-driven and relies on a latency proxy rather than a cycle-accurate hardware simulation. The real-trace results are currently limited to small public OPT models, and the utility heuristics still rely on tunable weights that may require different optimization for diverse model families (e.g., Sparse Mixture-of-Experts). 
 
 ## 13. Future Work
 Immediate next steps include the integration of the RIC-X2 logic into a cycle-accurate memory/fabric simulator. We also intend to explore the RTL realization of the Remap CAM and Admission Gate to quantify the area and power overhead.
