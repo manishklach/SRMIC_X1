@@ -1,5 +1,5 @@
 import hashlib
-from typing import Dict, Set, List, Tuple
+from typing import Dict, Optional, Set, List, Tuple
 from .types import TraceEvent, AccessResult, ObjectMetadata
 from .occupancy import OccupancyTracker
 from .collision import CollisionTracker
@@ -27,10 +27,36 @@ class RICX2:
         # Snapshot of congestion penalties per access
         self.step_congestion_penalties = 0
 
+    def _select_victim_id(self, rid: int) -> Optional[str]:
+        candidates = self.occupancy.get_resident_objects_by_coldness(rid)
+        if not candidates:
+            return None
+        return candidates[0]
+
     def _get_metadata(self, object_id: str, size: int) -> ObjectMetadata:
         if object_id not in self.metadata:
             self.metadata[object_id] = ObjectMetadata(object_id, size)
         return self.metadata[object_id]
+
+    def _update_access_window(self, obj: ObjectMetadata, decode_step: int):
+        if obj.last_step != decode_step:
+            obj.active_step_count += 1
+
+    def _retire_stale_replicas(self, current_step: int):
+        if not self.x2_mode or not self.cfg.REPLICATION_ENABLED:
+            return
+
+        for obj in self.metadata.values():
+            if not obj.replica_rids or obj.last_step < 0:
+                continue
+            if (current_step - obj.last_step) <= self.cfg.REPLICA_IDLE_STEPS:
+                continue
+
+            stale_rids = list(obj.replica_rids)
+            for rid in stale_rids:
+                if self.occupancy.is_resident(obj.object_id, rid):
+                    self.occupancy.remove(obj.object_id, rid)
+                self.replication.release_replica(obj, rid)
 
     def _get_base_region(self, object_id: str) -> int:
         if self.x2_mode:
@@ -39,9 +65,11 @@ class RICX2:
         return deterministic_hash(object_id) % self.cfg.NUM_REGIONS
 
     def handle_access(self, event: TraceEvent) -> AccessResult:
+        self._retire_stale_replicas(event.decode_step)
         base_rid = self._get_base_region(event.object_id)
         obj = self._get_metadata(event.object_id, event.size_bytes)
         obj.access_count += 1
+        self._update_access_window(obj, event.decode_step)
         
         # 1. Evaluate All Resident Locations
         resident_rids = []
@@ -98,8 +126,9 @@ class RICX2:
         if self.x2_mode and self.cfg.ADMISSION_ENABLED:
             if self.occupancy.regions[base_rid].free_bytes < event.size_bytes:
                 if self.occupancy.regions[base_rid].resident_objects:
-                    v_id = next(iter(self.occupancy.regions[base_rid].resident_objects))
-                    v_obj = self._get_metadata(v_id, event.size_bytes)
+                    v_id = self._select_victim_id(base_rid)
+                    v_size = self.occupancy.get_object_size(v_id, base_rid)
+                    v_obj = self._get_metadata(v_id, v_size)
                     if not self.admission.should_admit(obj, v_obj, self.occupancy.regions[base_rid], event.decode_step):
                         return AccessResult.MISS_BYPASSED
 
@@ -124,9 +153,10 @@ class RICX2:
     def _promote_to_region(self, event: TraceEvent, rid: int):
         while self.occupancy.regions[rid].free_bytes < event.size_bytes:
             if not self.occupancy.regions[rid].resident_objects: break
-            v_id = next(iter(self.occupancy.regions[rid].resident_objects))
-            v_obj = self._get_metadata(v_id, event.size_bytes)
-            self.occupancy.remove(v_id, rid, event.size_bytes)
+            v_id = self._select_victim_id(rid)
+            v_size = self.occupancy.get_object_size(v_id, rid)
+            v_obj = self._get_metadata(v_id, v_size)
+            self.occupancy.remove(v_id, rid)
             self.thrash.record_eviction(v_id, event.decode_step)
             v_obj.last_evict_step = event.decode_step
         self.occupancy.add(event, rid)

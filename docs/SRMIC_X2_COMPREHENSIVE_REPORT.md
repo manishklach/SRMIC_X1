@@ -1,7 +1,7 @@
 # SRMIC-X2: Comprehensive Architecture and Evaluation Report
 
 **Date:** March 18, 2026  
-**Status:** Architecture Validated (Trace-Driven)  
+**Status:** Deterministic synthetic evaluation complete; real-trace validation still required  
 **Version:** 3.0.0 (X2 Milestone)
 
 ---
@@ -9,7 +9,7 @@
 ## 1. Executive Summary
 The SRMIC-X2 architecture represents a major advancement in residency-first inference acceleration. By introducing a dynamic **Intelligence Layer** (RIC-X2) atop the static hardware fabric of X1, we have successfully addressed the "Collision Ceiling" that previously limited distributed SRAM tiers. 
 
-Our evaluation confirms that **Reactive Remapping** and **Selective Replication** combined reduce occupancy skew by **26%**, while **Regret-Aware Admission** eliminates over **90% of destructive thrashes**. In targeted hotspot scenarios, X2 delivers a **6% reduction in latency** and absorbs **25% of all hits** through cloned replicas.
+The current branch supports three defensible claims. First, on the reference dense synthetic trace, **Remap + Admission** improves hit rate and lowers the latency proxy relative to X1. Second, on the dedicated `HOTSPOT_FANOUT` workload, **Selective Replication** reduces latency by **5.7%** and absorbs **24.4%** of accesses through replicas. Third, after adding persistence gating and idle-replica retirement, replication is now positive across the checked-in synthetic stress workloads instead of regressing on bursty and rotating hot sets.
 
 ---
 
@@ -72,20 +72,32 @@ Evaluated on a 38,400-event trace simulating dense model decode steps.
 
 | Metric | X1 Baseline | X2 Remap+Admission | **X2 Full (Replicated)** | Improvement |
 | :--- | :---: | :---: | :---: | :---: |
-| **Useful Hit Rate** | 98.05% | 98.81% | **98.81%** | +0.76% |
-| **Occupancy Skew ($\sigma$)** | 0.262 | 0.257 | **0.193** | **26% Skew Reduction** |
-| **Thrash Events** | 76 | 6 | **6** | **92% Thrash reduction** |
-| **Regret Prevented** | 0 | 180,531 | **180,531** | - |
-| **Replica Count** | 0 | 0 | **32** | - |
+| **Useful Hit Rate** | 98.04% | 98.54% | **98.54%** | +0.50 pts |
+| **Occupancy Skew ($\sigma$)** | 0.262 | 0.250 | **0.147** | **44% Skew Reduction** |
+| **Latency Proxy (Cycles)** | 111,540 | 109,980 | **94,550** | Best case on this trace |
+| **Regret Prevented** | 0 | 219,890 | **101,550** | Synthetic utility units |
+| **Replica Count** | 0 | 0 | **64** | - |
+
+The reference trace remains synthetic and dense. These numbers are now deterministic across `PYTHONHASHSEED` values after hardening the simulator, but they should still be treated as pre-publication evidence until replicated on real decode traces.
 
 ### 4.2 Stress-Test Results: Hotspot Mitigation
 Evaluated via the `HOTSPOT_FANOUT` workload (concentrated demand on 2 regions).
 
 | Metric | X1 / X2_Adm Baseline | **X2 Full (Replicated)** | Benefit |
 | :--- | :---: | :---: | :---: |
-| **Latency Proxy (Cycles)** | 14,712 | **13,848** | **6.0% Latency Gain** |
-| **Congestion Penalty** | 4,176 | **3,312** | **21% Congestion Relief** |
-| **Replica Hit Rate** | 0.0% | **24.7%** | - |
+| **Latency Proxy (Cycles)** | 14,712 | **13,880** | **5.7% Latency Gain** |
+| **Congestion Penalty** | 4,176 | **3,344** | **20% Congestion Relief** |
+| **Replica Hit Rate** | 0.0% | **24.4%** | - |
+
+### 4.3 Stress-Test Results: Dynamic Workload Response
+After hardening the replication controller with minimum-step gating and idle-replica retirement, the branch no longer regresses on the checked-in dynamic workloads.
+
+| Workload | X1 Latency Proxy | X2_Adm Latency Proxy | X2_Full Latency Proxy | Takeaway |
+| :--- | :---: | :---: | :---: | :--- |
+| **BURST_CONTENTION** | 7,376 | 7,376 | **6,676** | Replication now helps without admission bypasses |
+| **HOTSET_ROTATION** | 39,110 | 40,112 | **36,644** | Replica retirement prevents stale phases from poisoning capacity |
+
+This substantially improves the branch’s internal consistency, but the next open issue is external validity: all of these workloads remain synthetic and should be backed by real decode traces before the policy is treated as production-ready.
 
 ---
 
@@ -137,9 +149,9 @@ SRMIC-X2 represents a critical defensive IP barrier. Competitors can build wide 
 ---
 
 ## 7. Conclusion and Next Steps
-SRMIC-X2 moves residency acceleration from a conceptual concept to a validated microarchitecture. The next phase involves **RTL Hardening** of the Remap CAM and Admission logic to verify power/area overheads.
+SRMIC-X2 moves residency acceleration from a conceptual concept to a stronger controller prototype, but not yet to a fully validated microarchitecture. The next phase should prioritize **real-trace evaluation**, broader **policy sensitivity sweeps**, and only then **RTL hardening** of the Remap CAM and Admission logic.
 
-**Bottom Line:** X2 delivers the performance of a high-associativity cache with the area-efficiency of a distributed mesh.
+**Bottom Line:** Remap plus admission looks credible, and replication now behaves well on the checked-in synthetic suite after policy hardening. The remaining question is whether those gains persist on real model traces.
 
 ---
-*Report generated by the SRMIC Technical Writing Agent. Verified against current branch artifacts.*
+*Report updated against deterministic branch artifacts generated on March 18, 2026.*

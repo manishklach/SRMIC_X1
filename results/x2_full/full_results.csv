@@ -1,4 +1,4 @@
-label,total_accesses,hit_rate,replica_gain,replica_count,bypass_count,remap_count,occupancy_skew,latency_proxy,regret_prevented
-X1_Baseline,38400,0.98046875,0.0,0,0,0,0.26185718120687346,79800,0.0
-X2_Remap_Admission,38400,0.988125,0.0,0,199,2,0.25721254766774965,79420,180531.23068794917
-X2_Full_Replicated,38400,0.988125,0.0,32,199,2,0.1926280361285303,79420,180531.23068794917
+workload,label,total_accesses,hit_rate,replica_hit_rate,replica_hits,replica_selected_ratio,replica_count,bypass_count,remap_count,occupancy_skew,latency_proxy,congestion_penalty,regret_prevented
+,X1_Baseline,38400,0.9804427083333334,0.0,0,0.0,0,0,0,0.26185718120687346,111540,31736,0.0
+,X2_Remap_Admission,38400,0.985390625,0.0,0,0.0,0,297,8,0.25029736952944465,109980,29748,219889.87573489395
+,X2_Full_Replicated,38400,0.985390625,0.2775,10656,0.2816142075636248,64,297,8,0.14708211377784647,94550,14318,101549.87573489422

@@ -15,6 +15,7 @@ class ObjectMetadata:
     object_id: str
     size_bytes: int
     access_count: int = 0
+    active_step_count: int = 0
     hit_count: int = 0
     replica_hit_count: int = 0
     last_step: int = -1
@@ -43,6 +44,7 @@ class RegionState:
     capacity_bytes: int
     used_bytes: int = 0
     resident_objects: Set[str] = field(default_factory=set)
+    resident_sizes: Dict[str, int] = field(default_factory=dict)
     
     @property
     def occupancy_fraction(self) -> float:
