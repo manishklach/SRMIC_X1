@@ -1,7 +1,7 @@
 # SRMIC-X2 Empirical Results Summary
 
 **Date:** March 18, 2026  
-**Status:** Deterministic synthetic evaluation completed; initial real-trace validation on public OPT models  
+**Status:** Deterministic synthetic evaluation completed; initial real-trace validation on public OPT models through 1.3B  
 **Baseline:** SRMIC-X1 (Static Hashing)
 
 ## 1. Executive Summary of Findings
@@ -32,9 +32,10 @@ Validated via the `HOTSPOT_FANOUT` workload (concentrated demand on 2 regions).
 - **Reference dense trace:** `X2_Remap_Admission` improves hit rate from 98.04% to 98.54% and reduces latency proxy from 111,540 to 109,980 cycles.
 - **Replication:** Still effective for static hotspots, reducing `HOTSPOT_FANOUT` latency proxy from 14,712 to 13,880 cycles.
 - **Dynamic workloads:** Policy hardening changed the previous regressions into wins: `BURST_CONTENTION` improves from 7,376 to 6,676 cycles and `HOTSET_ROTATION` improves from 39,110 to 36,644 cycles.
-- **Real traces:** On `facebook/opt-125m`, `x2_admission` reaches **1.71x** at 0.2 GB HRM versus **1.29x** for `srmic`; on `facebook/opt-350m`, `x2_admission` reaches **1.45x** at 0.4 GB versus **1.19x** for `srmic`.
+- **Real traces:** On `facebook/opt-125m`, `x2_admission` reaches **1.71x** at 0.2 GB HRM versus **1.29x** for `srmic`; on `facebook/opt-350m`, it reaches **1.45x** at 0.4 GB versus **1.19x**; on `facebook/opt-1.3b`, it reaches **1.23x** at 0.8 GB versus **1.04x**.
 - **Policy ranking:** Across both public real-trace runs, `x2_admission` beats `x2_full`, suggesting remap + admission is currently the strongest default story.
-- **Caution:** this is now stronger than synthetic-only evidence, but still not enough for broad architecture-validation claims. More real models are needed.
+- **Policy ranking:** Across all three public real-trace runs, `x2_admission` beats `x2_full`, suggesting remap + admission is currently the strongest default story.
+- **Caution:** this is now substantially stronger than synthetic-only evidence, but still not enough for broad architecture-validation claims or a strong final paper without one more larger-model or longer-context run.
 
 ---
 *Results generated from the checked-in synthetic X2 experiment harnesses after determinism hardening. Real-trace validation should be completed before external publication.*
