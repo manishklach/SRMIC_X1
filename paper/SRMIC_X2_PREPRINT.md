@@ -4,7 +4,7 @@
 **Date:** March 2026  
 
 ## Abstract
-Autoregressive Large Language Model (LLM) inference is characterized by extreme memory-bandwidth bottlenecks during the decode phase. The SRMIC-X1 architecture previously established the feasibility of an SRAM-backed "Residency-First" tier to mitigate High Bandwidth Memory (HBM) pressure. However, naive distributed residency tiers suffer from regional hash collisions and residency pollution, capping effective utilization. We propose SRMIC-X2, an intelligent controller-centric extension that introduces three collaborative mechanisms: (1) Reactive Remapping via a hardware-proxy CAM to resolve regional hotspots, (2) Regret-Aware Admission Control to prevent low-utility weights from displacing high-reuse resident data, and (3) Selective Hot-Object Replication to provide bandwidth relief for ultra-hot tensors. Using a trace-driven evaluation framework with deterministic synthetic stress traces and initial real decode traces from public OPT models, we find that remap + admission is the strongest and most robust policy tier. On real-trace replay, `x2_admission` improves speedup from 1.29x to 1.71x on `OPT-125m` at 0.2 GB HRM, from 1.19x to 1.45x on `OPT-350m` at 0.4 GB HRM, and from 1.04x to 1.23x on `OPT-1.3b` at 0.8 GB HRM, relative to the legacy static policy. These results support the thesis that residency intelligence is a critical architectural layer for next-generation inference accelerators, while also indicating that replication should currently be treated as a secondary optimization rather than the primary result.
+Autoregressive Large Language Model (LLM) inference is characterized by extreme memory-bandwidth bottlenecks during the decode phase. The SRMIC-X1 architecture previously established the feasibility of an SRAM-backed "Residency-First" tier to mitigate High Bandwidth Memory (HBM) pressure. However, naive distributed residency tiers suffer from regional hash collisions and residency pollution, capping effective utilization. We propose SRMIC-X2, an intelligent controller-centric extension that introduces three collaborative mechanisms: (1) Reactive Remapping via a hardware-proxy CAM to resolve regional hotspots, (2) Regret-Aware Admission Control to prevent low-utility weights from displacing high-reuse resident data, and (3) Selective Hot-Object Replication to provide bandwidth relief for ultra-hot tensors. Our evaluation is intentionally tiered: analytical 7B and 70B scaling studies motivate the architecture, deterministic synthetic stress traces isolate controller behavior, and initial real decode traces from public OPT models validate the policy direction on executed models. Across the real-trace runs, `x2_admission` improves replay speedup from 1.29x to 1.71x on `OPT-125m` at 0.2 GB HRM, from 1.19x to 1.45x on `OPT-350m` at 0.4 GB HRM, and from 1.04x to 1.23x on `OPT-1.3b` at 0.8 GB HRM, relative to the legacy static policy. These results support the thesis that residency intelligence is a critical architectural layer for next-generation inference accelerators, while also indicating that replication should currently be treated as a secondary optimization rather than the primary result.
 
 ## 1. Introduction
 The computational efficiency of Large Language Model (LLM) serving is currently dominated by the "Memory Wall." During the decode phase, the arithmetic intensity is low, meaning the tokens-per-second metric is dictated by the rate at which model weights can be fetched from High Bandwidth Memory (HBM).
@@ -112,9 +112,10 @@ In scenarios where remapping and admission are insufficient—specifically when 
 The controller clones ultra-high-utility objects into secondary regions. Future lookups utilize a pressure-aware routing policy, choosing the copy residing in the least-loaded region. While functionally active, the incremental benefit of replication is workload-sensitive and most pronounced in scenarios with extreme hotspot concentration.
 
 ## 9. Evaluation Methodology
-Our evaluation uses a trace-driven residency simulator validated against the SRMIC-X1 baseline. 
-- **Synthetic workloads:** We employ three stress-trace families: `HOTSPOT_FANOUT`, `BURST_CONTENTION`, and `HOTSET_ROTATION`.
-- **Real traces:** We capture decode-time weight-access traces from public Hugging Face models and replay the exact same trace through `srmic`, `x2_admission`, and `x2_full`.
+Our evaluation uses three evidence tiers, each answering a different question.
+- **Tier 1: Analytical scaling studies.** Existing 7B and 70B studies characterize bandwidth/capacity trends and motivate why a residency controller matters at larger model sizes.
+- **Tier 2: Deterministic synthetic workloads.** We employ three stress-trace families: `HOTSPOT_FANOUT`, `BURST_CONTENTION`, and `HOTSET_ROTATION` to isolate specific controller pathologies.
+- **Tier 3: Real trace replay.** We capture decode-time weight-access traces from public Hugging Face models and replay the exact same trace through `srmic`, `x2_admission`, and `x2_full`.
 - **Metrics:** We track Useful Hit Rate, Occupancy Skew ($\sigma$), Thrash Count, a Latency Proxy (cycles), and HBM-relative speedup from trace replay.
 - **Integrity:** The harness now enforces deterministic hashing and deterministic victim selection to allow repeatable comparisons.
 
@@ -136,18 +137,24 @@ Our evaluation uses a trace-driven residency simulator validated against the SRM
 | Speedup vs HBM | Replay-derived HBM-relative speedup | Workload-level performance summary |
 
 ## 10. Experimental Results
-### 10.1 X2 over X1 Baseline
-SRMIC-X2 demonstrates a significant improvement in hit-rate stability over the X1 baseline on both synthetic and initial real-trace workloads. On `facebook/opt-125m`, `x2_admission` improves replay speedup from 1.29x to 1.71x at 0.2 GB HRM. On `facebook/opt-350m`, `x2_admission` improves replay speedup from 1.19x to 1.45x at 0.4 GB HRM. On `facebook/opt-1.3b`, `x2_admission` improves replay speedup from 1.04x to 1.23x at 0.8 GB HRM.
+### 10.1 Tier 1: Analytical Scaling Context
+The analytical 7B and 70B studies are used in this paper as scaling context, not as direct X2 controller validation. They motivate the architectural regime in which residency intelligence matters: larger active working sets, tighter HRM budgets, and stronger sensitivity to placement inefficiency.
 
-### 10.2 Load Balancing and Remap Efficiency
+### 10.2 Tier 2: Controller Behavior on Synthetic Stress Workloads
+SRMIC-X2 demonstrates a significant improvement in hit-rate stability over the X1 baseline on synthetic controller-focused workloads. The synthetic suite is used to isolate hotspot concentration, burst pressure, and rotating hot-set behavior under deterministic conditions.
+
+### 10.3 Load Balancing and Remap Efficiency
 Reactive remapping successfully resolved primary capacity hotspots. 
 On the reference synthetic trace, occupancy skew improves from 0.262 in the baseline to 0.250 with remap + admission and to 0.147 with full X2 enabled. On real traces, remap activity remains substantial in the strongest policy mode, with 12 remaps on `OPT-125m` at 0.2 GB, 40 remaps on `OPT-350m` at 0.4 GB, and 25 remaps on `OPT-1.3b` at 0.8 GB.
 
-### 10.3 Admission Control and Thrash Mitigation
+### 10.4 Admission Control and Thrash Mitigation
 The admission controller is the primary driver of residency protection.
 The admission controller is the primary driver of the current real-trace gains. On `OPT-125m` at 0.2 GB, `x2_admission` issues 176 bypasses and reaches 55.5% hit rate versus 30.3% for `srmic`. On `OPT-350m` at 0.4 GB, it issues 460 bypasses and reaches 41.2% hit rate versus 21.1% for `srmic`. On `OPT-1.3b` at 0.8 GB, it issues 497 bypasses and reaches 25.2% hit rate versus 4.5% for `srmic`.
 
-### 10.4 Replication and Workload Sensitivity
+### 10.5 Tier 3: Initial Real-Trace Validation
+The real-trace results are the key empirical validation tier for this paper. Across all three public-model runs, `x2_admission` outperforms both the legacy `srmic` policy and `x2_full`, indicating that remap + admission is presently the strongest default policy configuration.
+
+### 10.6 Replication and Workload Sensitivity
 Replication provided measurable gains in the `HOTSPOT_FANOUT` workload.
 Replication still provides a measurable gain in the `HOTSPOT_FANOUT` workload, reducing synthetic latency proxy by 5.7%. However, in the initial real-trace experiments it trails `x2_admission`, reaching 1.54x versus 1.71x on `OPT-125m`, 1.41x versus 1.45x on `OPT-350m`, and 1.20x versus 1.23x on `OPT-1.3b`. Replication should therefore be positioned as a secondary optimization layer.
 
@@ -155,7 +162,7 @@ Replication still provides a measurable gain in the `HOTSPOT_FANOUT` workload, r
 The results confirm that residency intelligence is a critical layer for tiered memory systems. Remapping and admission control appear to be the most robust mechanisms across workloads. Selective replication acts as a "safety valve" for extreme hotspots, though its use must be utility-gated to avoid capacity dilution. A hybrid static/dynamic routing model appears to be the optimal path for distributed inference silicon.
 
 ## 12. Limitations
-Our current evaluation is trace-driven and relies on a latency proxy rather than a cycle-accurate hardware simulation. The real-trace results are currently limited to public OPT models through 1.3B, and the utility heuristics still rely on tunable weights that may require different optimization for diverse model families (e.g., Sparse Mixture-of-Experts). 
+Our current evaluation mixes three evidence tiers with different strengths. The 7B and 70B results are analytical rather than controller-empirical. The controller stress suite is synthetic by design. The real-trace results are currently limited to public OPT models through 1.3B and still rely on a latency proxy rather than a cycle-accurate hardware simulation. The utility heuristics also remain tunable and may require different optimization for diverse model families (e.g., Sparse Mixture-of-Experts). 
 
 ## 13. Future Work
 Immediate next steps include the integration of the RIC-X2 logic into a cycle-accurate memory/fabric simulator. We also intend to explore the RTL realization of the Remap CAM and Admission Gate to quantify the area and power overhead.
