@@ -27,7 +27,8 @@ def run_sweep(
     policy: str = "srmic",
     seed: int = 1234,
     load_in_8bit: bool = False,
-    hf_token: Optional[str] = None
+    hf_token: Optional[str] = None,
+    trust_remote_code: bool = False,
 ) -> Tuple[pd.DataFrame, List[Dict[str, Any]]]:
     """
     Runs inference with the tracer active, then replays the access trace through 
@@ -37,13 +38,18 @@ def run_sweep(
     torch.manual_seed(seed)
     
     # 1. Load Model and Trace
-    tokenizer = AutoTokenizer.from_pretrained(model_name, token=hf_token)
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_name,
+        token=hf_token,
+        trust_remote_code=trust_remote_code,
+    )
     
     model_kwargs = {
         "torch_dtype": torch.float16,
         "device_map": "cpu", # Use CPU for tracing if GPU is not available/needed
         "token": hf_token,
-        "low_cpu_mem_usage": True
+        "low_cpu_mem_usage": True,
+        "trust_remote_code": trust_remote_code,
     }
     if load_in_8bit:
         model_kwargs["load_in_8bit"] = True

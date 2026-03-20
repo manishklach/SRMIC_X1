@@ -24,6 +24,7 @@ def main():
     parser.add_argument("--seed", type=int, default=1234, help="Random seed for reproducibility")
     parser.add_argument("--load-in-8bit", action="store_true", help="Load model in 8-bit mode")
     parser.add_argument("--hf-token", type=str, default=None, help="HuggingFace API token")
+    parser.add_argument("--trust-remote-code", action="store_true", help="Allow model/tokenizer custom code from the Hugging Face repo")
     
     args = parser.parse_args()
     
@@ -46,7 +47,8 @@ def main():
             policy=args.policy,
             seed=args.seed,
             load_in_8bit=args.load_in_8bit,
-            hf_token=args.hf_token
+            hf_token=args.hf_token,
+            trust_remote_code=args.trust_remote_code,
         )
         model_name = args.model
         

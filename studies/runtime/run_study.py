@@ -17,6 +17,8 @@ def main():
     parser.add_argument("--tokens", type=int, default=30, help="Tokens to generate for each model")
     parser.add_argument("--policies", type=str, nargs="+", default=["srmic"], help="Replay policies to compare")
     parser.add_argument("--output", type=str, default="studies/runtime/multi_model_comparison/", help="Output directory")
+    parser.add_argument("--hf-token", type=str, default=None, help="Optional Hugging Face token for gated models")
+    parser.add_argument("--trust-remote-code", action="store_true", help="Allow model/tokenizer custom code from the Hugging Face repo")
     
     args = parser.parse_args()
     
@@ -36,6 +38,8 @@ def main():
                         args.hrm_budgets,
                         num_tokens=args.tokens,
                         policy=policy,
+                        hf_token=args.hf_token,
+                        trust_remote_code=args.trust_remote_code,
                     )
                 else:
                     df = replay_trace_through_sim(reference_trace, args.hrm_budgets, policy=policy)
