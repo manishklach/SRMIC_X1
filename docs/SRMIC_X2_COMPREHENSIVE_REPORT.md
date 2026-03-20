@@ -1,7 +1,7 @@
 # SRMIC-X2: Comprehensive Architecture and Evaluation Report
 
 **Date:** March 18, 2026  
-**Status:** Deterministic synthetic evaluation complete; initial real-trace validation completed on public OPT models through 1.3B  
+**Status:** Deterministic synthetic evaluation complete; initial real-trace validation completed on public OPT and Qwen models through 1.5B  
 **Version:** 3.0.0 (X2 Milestone)
 
 ---
@@ -9,7 +9,7 @@
 ## 1. Executive Summary
 The SRMIC-X2 architecture represents a major advancement in residency-first inference acceleration. By introducing a dynamic **Intelligence Layer** (RIC-X2) atop the static hardware fabric of X1, we have successfully addressed the "Collision Ceiling" that previously limited distributed SRAM tiers. 
 
-The current branch supports three defensible claims. First, on the reference dense synthetic trace, **Remap + Admission** improves hit rate and lowers the latency proxy relative to X1. Second, on the dedicated `HOTSPOT_FANOUT` workload, **Selective Replication** reduces latency by **5.7%** and absorbs **24.4%** of accesses through replicas. Third, on initial real-trace replay using public `OPT-125m`, `OPT-350m`, and `OPT-1.3b`, **Remap + Admission** consistently outperforms both the legacy `srmic` policy and the more aggressive replicated mode.
+The current branch supports three defensible claims. First, on the reference dense synthetic trace, **Remap + Admission** improves hit rate and lowers the latency proxy relative to X1. Second, on the dedicated `HOTSPOT_FANOUT` workload, **Selective Replication** reduces latency by **5.7%** and absorbs **24.4%** of accesses through replicas. Third, on initial real-trace replay using public `OPT-125m`, `OPT-350m`, `OPT-1.3b`, and Qwen 0.5B/1.5B models, **Remap + Admission** consistently beats the legacy `srmic` policy and is the strongest or tied-strongest X2 mode.
 
 ---
 
@@ -99,14 +99,16 @@ After hardening the replication controller with minimum-step gating and idle-rep
 
 This substantially improves the branch’s internal consistency, but the next open issue is external validity: all of these workloads remain synthetic and should be backed by real decode traces before the policy is treated as production-ready.
 
-### 4.4 Initial Real-Trace Results: Public OPT Models
-The runtime replay path now supports direct policy comparison on captured decode traces. Three public OPT models were evaluated as an initial check.
+### 4.4 Initial Real-Trace Results: Public OPT and Qwen Models
+The runtime replay path now supports direct policy comparison on captured decode traces. Three public OPT models and two Qwen models were evaluated as an initial check.
 
 | Model | HRM Budget | `srmic` Speedup | `x2_admission` Speedup | `x2_full` Speedup | Best Policy |
 | :--- | :---: | :---: | :---: | :---: | :--- |
 | **facebook/opt-125m** | 0.2 GB | 1.29x | **1.71x** | 1.54x | Remap + Admission |
 | **facebook/opt-350m** | 0.4 GB | 1.19x | **1.45x** | 1.41x | Remap + Admission |
 | **facebook/opt-1.3b** | 0.8 GB | 1.04x | **1.23x** | 1.20x | Remap + Admission |
+| **Qwen/Qwen2.5-0.5B-Instruct** | 0.4 GB | 1.12x | **1.32x** | 1.25x | Remap + Admission |
+| **Qwen/Qwen2.5-1.5B-Instruct** | 0.8 GB | 1.09x | **1.17x** | **1.17x** | Tie |
 
 These runs are materially stronger than synthetic-only evidence because the traces are captured from real model execution. They also sharpen the current architecture story: admission and remapping are the robust core, while replication remains secondary and should not headline the design until it wins more consistently on larger traces.
 
@@ -162,7 +164,7 @@ SRMIC-X2 represents a critical defensive IP barrier. Competitors can build wide 
 ## 7. Conclusion and Next Steps
 SRMIC-X2 moves residency acceleration from a conceptual concept to a stronger controller prototype, but not yet to a fully validated microarchitecture. The next phase should prioritize **more real-trace evaluation**, broader **policy sensitivity sweeps**, and only then **RTL hardening** of the Remap CAM and Admission logic.
 
-**Bottom Line:** Remap plus admission now looks credible on synthetic traces and across three real public-model traces up to 1.3B. Replication is improved, but it is not yet the lead result.
+**Bottom Line:** Remap plus admission now looks credible on synthetic traces and across five real public-model traces up to 1.5B. Replication is improved, but it is not yet the lead result.
 
 ---
 *Report updated against deterministic branch artifacts generated on March 18, 2026.*

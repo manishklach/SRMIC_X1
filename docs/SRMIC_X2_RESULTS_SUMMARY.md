@@ -1,11 +1,11 @@
 # SRMIC-X2 Empirical Results Summary
 
 **Date:** March 18, 2026  
-**Status:** Deterministic synthetic evaluation completed; initial real-trace validation on public OPT models through 1.3B  
+**Status:** Deterministic synthetic evaluation completed; initial real-trace validation on public OPT and Qwen models through 1.5B  
 **Baseline:** SRMIC-X1 (Static Hashing)
 
 ## 1. Executive Summary of Findings
-SRMIC-X2 improves the static-hash baseline on the reference dense trace and, after policy hardening, replication is now positive across the checked-in synthetic stress suite. Initial real-trace replay on public OPT models shows the same directional result, with **Remap + Admission** consistently outperforming both the legacy `srmic` policy and the more aggressive replicated mode.
+SRMIC-X2 improves the static-hash baseline on the reference dense trace and, after policy hardening, replication is now positive across the checked-in synthetic stress suite. Initial real-trace replay on public OPT and Qwen models shows the same directional result, with **Remap + Admission** generally outperforming the legacy `srmic` policy and usually outperforming the more aggressive replicated mode.
 
 ## 2. Key Performance Metrics
 
@@ -33,8 +33,8 @@ Validated via the `HOTSPOT_FANOUT` workload (concentrated demand on 2 regions).
 - **Replication:** Still effective for static hotspots, reducing `HOTSPOT_FANOUT` latency proxy from 14,712 to 13,880 cycles.
 - **Dynamic workloads:** Policy hardening changed the previous regressions into wins: `BURST_CONTENTION` improves from 7,376 to 6,676 cycles and `HOTSET_ROTATION` improves from 39,110 to 36,644 cycles.
 - **Real traces:** On `facebook/opt-125m`, `x2_admission` reaches **1.71x** at 0.2 GB HRM versus **1.29x** for `srmic`; on `facebook/opt-350m`, it reaches **1.45x** at 0.4 GB versus **1.19x**; on `facebook/opt-1.3b`, it reaches **1.23x** at 0.8 GB versus **1.04x**.
-- **Policy ranking:** Across both public real-trace runs, `x2_admission` beats `x2_full`, suggesting remap + admission is currently the strongest default story.
-- **Policy ranking:** Across all three public real-trace runs, `x2_admission` beats `x2_full`, suggesting remap + admission is currently the strongest default story.
+- **Qwen family:** On `Qwen/Qwen2.5-0.5B-Instruct`, `x2_admission` reaches **1.32x** at 0.4 GB HRM versus **1.12x** for `srmic`. On `Qwen/Qwen2.5-1.5B-Instruct`, both `x2_admission` and `x2_full` reach **1.17x** at 0.8 GB versus **1.09x** for `srmic`.
+- **Policy ranking:** Across the current public real-trace runs, `x2_admission` is the most consistently strong default policy, though the 1.5B Qwen run narrows the gap to a tie with `x2_full`.
 - **Caution:** this is now substantially stronger than synthetic-only evidence, but still not enough for broad architecture-validation claims or a strong final paper without one more larger-model or longer-context run.
 
 ---
