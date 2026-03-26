@@ -10,7 +10,8 @@ twitter:
 logo: /assets/images/srmic_logo.png
 
 # Build settings
-theme: minima # We'll override this with a custom layout but keep it for defaults
+permalink: pretty
+theme: minima
 plugins:
   - jekyll-feed
   - jekyll-seo-tag
