@@ -29,14 +29,14 @@ The SRMIC project provides a range of technical documentation for researchers, s
   <span class="label">Hardware Addendum</span>
   <h3>SRMIC Hardened Architecture Addendum</h3>
   <p>Details on the hardening process for the SRMIC-X1 architecture, focusing on power, area, and timing (P.A.T.) results.</p>
-  <a href="https://github.com/manishklach/SRMIC_X1/blob/master/SRMIC_X1_v2_0_Hardened_Addendum.md" class="btn btn-secondary">Read Online</a>
+  <a href="{{ '/srmic_x1_v2_0_hardened_addendum/' | relative_url }}" class="btn btn-secondary">Read Online</a>
 </div>
 
 <div class="artifact-card">
   <span class="label">Formal Spec</span>
   <h3>SRMIC Formal Specification (TLM)</h3>
   <p>Transaction-level model specification for the SRMIC-X1 architecture, used for architectural verification and RTL-equivalence checking.</p>
-  <a href="https://github.com/manishklach/SRMIC_X1/blob/master/SRMIC_X1_Formal_Spec.md" class="btn btn-secondary">Read Online</a>
+  <a href="{{ '/srmic_x1_formal_spec/' | relative_url }}" class="btn btn-secondary">Read Online</a>
 </div>
 
 ## SRMIC-X2 (New Intelligence Tier)
