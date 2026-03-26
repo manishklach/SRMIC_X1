@@ -19,7 +19,7 @@ For ultra-large models (70B+), a single die may not provide sufficient SRAM capa
   <span class="label label-concept">Concept</span>
   <h3>SRMIC Chiplet Concept Study</h3>
   <p>Theoretical scaling of the SRMESH fabric across a 4-chiplet MCM (Multi-Chip Module).</p>
-  <a href="https://github.com/manishklach/SRMIC_X1/blob/master/SRMIC_X1_Chiplet_Concept.md" class="btn btn-secondary">Read Study</a>
+  <a href="{{ '/srmic_x1_chiplet_concept/' | relative_url }}" class="btn btn-secondary">Read Study</a>
 </div>
 
 ### Scaled Architecture Goals:

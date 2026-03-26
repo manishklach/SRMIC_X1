@@ -12,6 +12,11 @@ title: SRMIC | Residency-First LLM Inference Architecture
   </div>
 </div>
 
+## What is SRMIC?
+**SRMIC** (SRAM-centric Residency-first Memory-centric Inference) is a next-generation systems architecture designed to break the memory-bandwidth wall in Large Language Model (LLM) serving. 
+
+Unlike conventional GPUs that rely on high-latency HBM fetches for every token generated, SRMIC prioritizes **weight residency** in a distributed, on-package SRAM tier. By keeping the model's active working set "resident" in fast SRAM, we enable ultra-low latency inference and massive throughput scaling that traditional memory hierarchies cannot match.
+
 ## The Problem: The HBM Bottleneck
 Large Language Model (LLM) decode is **memory-bound, not compute-bound**. For each generated token, a bounded working set of weights must be fetched from memory. On conventional architectures, this working set lives in HBM. HBM bandwidth — not arithmetic throughput — determines decode latency and token-to-token jitter.
 

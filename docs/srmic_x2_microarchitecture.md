@@ -1,4 +1,9 @@
-# SRMIC-X2 Microarchitecture: Collision-Aware Residency Control
+---
+layout: default
+title: SRMIC-X2 Microarchitecture
+---
+
+# SRMIC-X2: Collision-Aware Residency Control
 
 ## 1. Objective: Breaking the Collision Ceiling
 SRMIC-X1 identifies that distributed regional HRM hit rates are capped due to regional hash collisions. X2 introduces a dynamic control plane to load-balance and protect the HRM tier.
