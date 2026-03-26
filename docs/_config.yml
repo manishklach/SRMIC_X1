@@ -3,15 +3,16 @@ description: "SRMIC (SRAM-centric Residency-first Memory-centric Inference) is a
 baseurl: "/SRMIC_X1"
 url: "https://manishklach.github.io"
 
+# Canonical Naming
+brand_name: "SRMIC"
+brand_tagline: "Residency-First LLM Inference Architecture"
+expansion: "SRAM-centric Residency-first Memory-centric Inference"
+
 # SEO
 twitter:
   username: manishklach
   card: summary_large_image
 logo: /assets/images/srmic_logo.png
-social:
-  name: SRMIC Project
-  links:
-    - https://github.com/manishklach/SRMIC_X1
 
 # Build settings
 permalink: pretty

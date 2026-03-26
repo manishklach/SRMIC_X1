@@ -33,9 +33,9 @@ SRMIC uses a **Bounded Working-Set Model**. Each HRM (Hybrid Residency Memory) r
       └─────────────────────────┘
 ```
 
-## 2. SRMIC-X2: Residency Intelligence
+## 2. Residency Intelligence (SRMIC-X2)
 
-The **RIC-X2 (Residency Intelligence Controller)** is the core advancement in the SRMIC ecosystem. It transforms a static mesh into an intelligent system capable of real-time load balancing and thrash mitigation.
+The **RIC-X2 (Residency Intelligence Controller)** is the core intelligence upgrade for the SRMIC ecosystem. It transforms a static mesh into an intelligent system capable of real-time load balancing and thrash mitigation.
 
 ### Key Intelligence Mechanisms:
 *   **Reactive Remapping:** Dynamic relocation of colliding tensors from congested to under-utilized regions.

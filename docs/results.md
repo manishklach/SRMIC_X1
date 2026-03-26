@@ -8,7 +8,7 @@ title: SRMIC Benchmarks | Performance Results
 The SRMIC architecture has been evaluated across synthetic stress-tests and real-trace replays for mainstream LLMs (Mistral-7B, OPT, Qwen).
 
 ## 1. Load Balancing and Skew Reduction
-A primary goal of SRMIC-X2 is regional load balancing. In static hashing (SRMIC-X1), hash collisions lead to regional over-subscription. SRMIC-X2's intelligence layer significantly reduces this skew.
+A primary goal of the SRMIC-X2 intelligence tier is regional load balancing. In the static baseline (SRMIC-X1), hash collisions lead to regional over-subscription. SRMIC-X2's intelligence layer significantly reduces this skew.
 
 | Scenario | Occupancy Skew ($\sigma$) | Improvement |
 | :--- | :---: | :---: |
