@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">SRMIC logo</title>
+  <desc id="desc">Square residency fabric mark with central active node.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10253f"/>
+      <stop offset="100%" stop-color="#153e6d"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="40" fill="url(#bg)"/>
+  <rect x="36" y="36" width="184" height="184" rx="24" fill="none" stroke="#ffffff" stroke-width="12"/>
+  <path d="M36 128H220" stroke="#58aeea" stroke-width="12"/>
+  <path d="M128 36V220" stroke="#ffffff" stroke-opacity="0.26" stroke-width="12"/>
+  <circle cx="128" cy="128" r="22" fill="#58aeea"/>
+  <circle cx="128" cy="128" r="8" fill="#ffffff"/>
+</svg>

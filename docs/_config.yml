@@ -12,7 +12,7 @@ expansion: "SRAM-centric Residency-first Memory-centric Inference"
 twitter:
   username: manishklach
   card: summary_large_image
-logo: /assets/images/srmic_logo.png
+logo: /assets/images/srmic_logo.svg
 
 # Build settings
 permalink: pretty

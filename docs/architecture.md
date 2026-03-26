@@ -1,11 +1,21 @@
 ---
 layout: default
 title: Systems Architecture | SRMIC
+description: SRMIC architecture overview covering the distributed HRM residency tier, SRMESH package fabric, residency intelligence, and the structural basis for larger hardware scale-out configurations.
 ---
 
 # Systems Architecture
 
 The SRMIC architecture is an analytical framework designed to optimize Large Language Model (LLM) decode steps by introducing a distributed, on-package residency tier. By shifting the primary weight-fetch path from external HBM to a local SRAM mesh, the architecture seeks to minimize the latency variance and bandwidth constraints inherent in traditional memory hierarchies.
+
+<div class="tier-summary">
+  <h3>Architecture Summary</h3>
+  <p>SRMIC is not framed as a monolithic SRAM block glued onto a GPU datapath. It is a modular residency fabric built from independently serviced regions, chiplet partitioning, and a topology that can scale outward while preserving locality-first decode service.</p>
+  <div class="quick-links">
+    <a href="{{ '/hardware_config/' | relative_url }}" class="btn">Hardware Config</a>
+    <a href="{{ '/results/' | relative_url }}" class="btn btn-secondary">Performance Evaluation</a>
+  </div>
+</div>
 
 ## 1. The Distributed Memory Model
 
@@ -55,6 +65,12 @@ The SRMESH fabric is a regional, high-bandwidth interconnect designed to keep tr
 | SRMESH Aggregate BW | 48,000 GB/s | Regional SRAM fabric |
 | HRM Regions | 16 | 4 chiplets × 4 regions |
 | Tensor Clusters | 128 | 8 clusters per HRM region pair |
+
+<div class="note-box">
+  <h3>Hardware Organization Matters</h3>
+  <p>The compact published baseline is only one anchor point. Because HRM service is modeled per region and regions operate in parallel, the more important architectural question is how the same residency abstraction scales as chiplet count, regionalization, and per-region capacity increase.</p>
+  <p>For the current public support statement, scale-out ladder, and forward sizing direction, see [Hardware Configuration]({{ '/hardware_config/' | relative_url }}).</p>
+</div>
 
 ## 4. Formal Verification and RTL Equivalence
 To ensure the analytical model is grounded in hardware feasibility, the SRMIC architecture is backed by a **Formal Specification (TLM)**. This model defines the deterministic state transitions required for residency management, allowing for future RTL-equivalence checking and ensuring that no deadlocks occur during dynamic remapping.
