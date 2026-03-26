@@ -1,3 +1,8 @@
+---
+layout: default
+title: Formal Specification | SRMIC-X1
+---
+
 # SRMIC-X1 Formal Architecture Specification
 
 ## 1. Product Definition

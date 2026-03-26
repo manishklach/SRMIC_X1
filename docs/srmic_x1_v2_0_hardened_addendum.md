@@ -1,3 +1,8 @@
+---
+layout: default
+title: Hardware Addendum | SRMIC-X1 v2.0
+---
+
 # SRMIC-X1 v2.0 Hardened Addendum  
 ## Fabric Justification, SRAM Area Estimate, and Power Breakdown
 
