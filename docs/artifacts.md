@@ -13,14 +13,14 @@ The SRMIC project provides a range of technical documentation for researchers, s
   <span class="label label-current">Current System</span>
   <h3>SRMIC Architecture Whitepaper (30 Pages)</h3>
   <p>Comprehensive whitepaper describing the SRMIC memory-centric architecture, regional fabric (SRMESH), and HRM tier design.</p>
-  <a href="https://github.com/manishklach/SRMIC_X1/raw/main/SRMIC_Architecture_Whitepaper_30pg.pdf" class="btn">Download PDF</a>
+  <a href="https://raw.githubusercontent.com/manishklach/SRMIC_X1/master/SRMIC_Architecture_Whitepaper_30pg.pdf" class="btn">Download PDF</a>
 </div>
 
 <div class="artifact-card">
   <span class="label label-current">Technical Specification</span>
   <h3>SRMIC Integrated Architecture Spec (v2.0)</h3>
   <p>Formal architectural specification for the v2.0 hardware implementation, including interface definitions and register maps.</p>
-  <a href="https://github.com/manishklach/SRMIC_X1/raw/main/SRMIC_X1_Integrated_Architecture_Spec_v2_0.pdf" class="btn">Download PDF</a>
+  <a href="https://raw.githubusercontent.com/manishklach/SRMIC_X1/master/SRMIC_X1_Integrated_Architecture_Spec_v2_0.pdf" class="btn">Download PDF</a>
 </div>
 
 ## Technical Briefs & Addendums
@@ -29,14 +29,14 @@ The SRMIC project provides a range of technical documentation for researchers, s
   <span class="label">Hardware Addendum</span>
   <h3>SRMIC Hardened Architecture Addendum</h3>
   <p>Details on the hardening process for the SRMIC-X1 architecture, focusing on power, area, and timing (P.A.T.) results.</p>
-  <a href="https://github.com/manishklach/SRMIC_X1/blob/main/SRMIC_X1_v2_0_Hardened_Addendum.md" class="btn btn-secondary">Read Online</a>
+  <a href="https://github.com/manishklach/SRMIC_X1/blob/master/SRMIC_X1_v2_0_Hardened_Addendum.md" class="btn btn-secondary">Read Online</a>
 </div>
 
 <div class="artifact-card">
   <span class="label">Formal Spec</span>
   <h3>SRMIC Formal Specification (TLM)</h3>
   <p>Transaction-level model specification for the SRMIC-X1 architecture, used for architectural verification and RTL-equivalence checking.</p>
-  <a href="https://github.com/manishklach/SRMIC_X1/blob/main/SRMIC_X1_Formal_Spec.md" class="btn btn-secondary">Read Online</a>
+  <a href="https://github.com/manishklach/SRMIC_X1/blob/master/SRMIC_X1_Formal_Spec.md" class="btn btn-secondary">Read Online</a>
 </div>
 
 ## SRMIC-X2 (New Intelligence Tier)
@@ -45,14 +45,14 @@ The SRMIC project provides a range of technical documentation for researchers, s
   <span class="label label-current">Experimental</span>
   <h3>SRMIC-X2 Executive Summary</h3>
   <p>Summary of the Residency Intelligence Tier (X2) and the RIC-X2 controller enhancements.</p>
-  <a href="https://github.com/manishklach/SRMIC_X1/blob/main/docs/SRMIC_X2_EXECUTIVE_SUMMARY.md" class="btn btn-secondary">Read Online</a>
+  <a href="https://github.com/manishklach/SRMIC_X1/blob/master/docs/SRMIC_X2_EXECUTIVE_SUMMARY.md" class="btn btn-secondary">Read Online</a>
 </div>
 
 <div class="artifact-card">
   <span class="label label-current">Experimental</span>
   <h3>SRMIC-X2 Microarchitecture Deep-Dive</h3>
   <p>Technical details on remap CAMs, utility-gated admission, and pressure-aware routing.</p>
-  <a href="https://github.com/manishklach/SRMIC_X1/blob/main/docs/SRMIC_X2_MICROARCHITECTURE.md" class="btn btn-secondary">Read Online</a>
+  <a href="https://github.com/manishklach/SRMIC_X1/blob/master/docs/SRMIC_X2_MICROARCHITECTURE.md" class="btn btn-secondary">Read Online</a>
 </div>
 
 [View Project Roadmap →]({{ '/roadmap/' | relative_url }})
