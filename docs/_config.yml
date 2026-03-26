@@ -1,0 +1,29 @@
+title: SRMIC | Residency-First LLM Inference Architecture
+description: A distributed on-package SRAM-centric architecture for LLM decode acceleration, eliminating the HBM bottleneck.
+baseurl: "/SRMIC_X1"
+url: "https://manishklach.github.io"
+
+# SEO
+twitter:
+  username: manishklach
+  card: summary_large_image
+logo: /assets/images/srmic_logo.png
+
+# Build settings
+theme: minima # We'll override this with a custom layout but keep it for defaults
+plugins:
+  - jekyll-feed
+  - jekyll-seo-tag
+  - jekyll-sitemap
+
+# Custom Collections or Data if needed
+collections:
+  artifacts:
+    output: true
+    permalink: /artifacts/:path/
+
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - node_modules
+  - vendor
