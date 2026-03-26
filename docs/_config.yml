@@ -1,7 +1,7 @@
 title: SRMIC | Residency-First LLM Inference Architecture
 description: "SRMIC (SRAM-centric Residency-first Memory-centric Inference) is a distributed on-package SRAM architecture designed to eliminate HBM bottlenecks in LLM decode."
-baseurl: ""
-url: "https://manishklach.github.io/SRMIC_X1"
+baseurl: "/SRMIC_X1"
+url: "https://manishklach.github.io"
 
 # SEO
 twitter:
