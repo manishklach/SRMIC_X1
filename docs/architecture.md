@@ -1,15 +1,17 @@
 ---
 layout: default
-title: SRMIC Systems Architecture | SRAM-Centric Decode Acceleration
+title: Systems Architecture | SRMIC
 ---
 
-# Architecture Overview
+# Systems Architecture
 
-The SRMIC architecture is designed to optimize LLM decode steps where a bounded working set of weights must be accessed for every token. Instead of a flat memory hierarchy, SRMIC introduces an intelligent, distributed residency tier.
+The SRMIC architecture is an analytical framework designed to optimize Large Language Model (LLM) decode steps by introducing a distributed, on-package residency tier. By shifting the primary weight-fetch path from external HBM to a local SRAM mesh, the architecture seeks to minimize the latency variance and bandwidth constraints inherent in traditional memory hierarchies.
 
 ## 1. The Distributed Memory Model
 
-SRMIC uses a **Bounded Working-Set Model**. Each HRM (Hybrid Residency Memory) region operates independently and in parallel. This distributed approach ensures that aggregate bandwidth scales with the number of regions.
+SRMIC utilizes a **Bounded Working-Set Model**. Unlike general-purpose caches, the architecture assumes that for a given model and token-generation step, a specific, predictable subset of weights is required. This "active working set" is partitioned across multiple HRM (Hybrid Residency Memory) regions that operate independently and in parallel.
+
+This distributed approach ensures that aggregate bandwidth scales linearly with the number of regions, providing a theoretical performance floor that is significantly higher than conventional HBM-bound paths.
 
 ```text
 ┌─────────────────────────────────────┐
@@ -35,28 +37,26 @@ SRMIC uses a **Bounded Working-Set Model**. Each HRM (Hybrid Residency Memory) r
 
 ## 2. Residency Intelligence (SRMIC-X2)
 
-The **RIC-X2 (Residency Intelligence Controller)** is the core intelligence upgrade for the SRMIC ecosystem. It transforms a static mesh into an intelligent system capable of real-time load balancing and thrash mitigation.
+The **RIC-X2 (Residency Intelligence Controller)** represents the logic tier of the SRMIC ecosystem. It transforms a static mesh into a dynamic system capable of real-time load balancing. Because static hashing often leads to regional hotspots—where a few SRAM regions are over-utilized while others remain idle—the RIC-X2 monitors telemetry to override placement decisions.
 
 ### Key Intelligence Mechanisms:
-*   **Reactive Remapping:** Dynamic relocation of colliding tensors from congested to under-utilized regions.
-*   **Regret-Aware Admission:** A utility-based gate that prevents "hot" cores from being displaced by low-value transient data.
-*   **Selective Replication:** Automated cloning of "ultra-hot" tensors (e.g., attention projections) to secondary regions to relieve localized bandwidth hotspots.
+*   **Reactive Remapping:** Dynamically relocates colliding tensors from congested to under-utilized regions based on occupancy skew.
+*   **Regret-Aware Admission:** A utility-gated mechanism that prevents transient data from displacing high-value "hot" residents.
+*   **Selective Replication:** Clones ultra-hot tensors to secondary regions to alleviate localized bandwidth pressure.
 
 ## 3. High-Bandwidth Fabric (SRMESH)
 
-The SRMESH fabric is a regional, high-bandwidth interconnect that enables HRM regions to serve local partitions of active weights to adjacent tensor clusters. By keeping traffic local, SRMESH avoids the power and latency penalties of traversing global on-chip fabrics.
+The SRMESH fabric is a regional, high-bandwidth interconnect designed to keep traffic local to the tensor clusters. By minimizing global on-chip movement, the fabric reduces the energy-per-bit cost of weight fetches compared to repeated HBM transactions.
 
-### Performance Parameters (SRMIC-P1)
+### Modeled Parameters (SRMIC-P1 Baseline)
 | Parameter | Value | Rationale |
 |---|---|---|
 | HBM Aggregate BW | 24,000 GB/s | 8 stacks (HBM3e class) |
-| SRMESH Aggregate BW | 48,000 GB/s | Local SRAM fabric |
+| SRMESH Aggregate BW | 48,000 GB/s | Regional SRAM fabric |
 | HRM Regions | 16 | 4 chiplets × 4 regions |
 | Tensor Clusters | 128 | 8 clusters per HRM region pair |
 
-## 4. Formal Verification
-The SRMIC architecture is backed by a **Formal Specification (TLM)** that ensures deterministic behavior across distributed regions. We utilize formal properties to verify:
-*   **Residency Invariants:** Ensuring tensors are only evicted under valid policy decisions.
-*   **Fabric Liveness:** Guaranteeing no deadlocks during regional remapping cycles.
+## 4. Formal Verification and RTL Equivalence
+To ensure the analytical model is grounded in hardware feasibility, the SRMIC architecture is backed by a **Formal Specification (TLM)**. This model defines the deterministic state transitions required for residency management, allowing for future RTL-equivalence checking and ensuring that no deadlocks occur during dynamic remapping.
 
-[View Results Summary →]({{ '/results/' | relative_url }})
+[View Performance Evaluation →]({{ '/results/' | relative_url }})
