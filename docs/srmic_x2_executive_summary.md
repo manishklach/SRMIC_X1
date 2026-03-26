@@ -1,4 +1,9 @@
-# SRMIC-X2 Executive Summary: Intelligence-First Residency Control
+---
+layout: default
+title: SRMIC-X2 Executive Summary
+---
+
+# SRMIC-X2: Intelligence-First Residency Control
 
 ## 1. Why This Matters
 High Bandwidth Memory (HBM) remains the primary bottleneck and cost-driver in LLM inference. While adding an SRAM residency tier (SRMIC-X1) provides a raw bandwidth path to accelerate decode, "dumb" distributed memory management hits a performance ceiling. Static hashing results in regional collisions where a few SRAM regions are overwhelmed while others sit idle, capping hit rates at ~65%. **SRMIC-X2 breaks this ceiling**, transforming the memory tier into an intelligent, dynamically balanced system that maximizes every byte of silicon area.
