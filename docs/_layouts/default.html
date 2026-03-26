@@ -11,8 +11,16 @@
 </head>
 <body>
   <header class="site-header">
-    <div class="container">
-      <a class="site-title" href="{{ '/' | relative_url }}">SRMIC</a>
+    <div class="container site-header-container">
+      <a class="site-logo" href="{{ '/' | relative_url }}">
+        <svg class="logo-svg" width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="2" y="2" width="28" height="28" rx="2" stroke="currentColor" stroke-width="2"/>
+          <path d="M2 16H30" stroke="#3498db" stroke-width="2"/>
+          <path d="M16 2V30" stroke="currentColor" stroke-opacity="0.2" stroke-width="2"/>
+          <circle cx="16" cy="16" r="3" fill="#3498db"/>
+        </svg>
+        <span class="site-title">SRMIC</span>
+      </a>
       <nav class="site-nav">
         <a href="{{ '/architecture/' | relative_url }}">Architecture</a>
         <a href="{{ '/results/' | relative_url }}">Results</a>
@@ -31,8 +39,17 @@
 
   <footer class="site-footer">
     <div class="container">
-      <p><strong>Patent Pending:</strong> Application No. 202641031926 (IPO)</p>
-      <p>&copy; 2026 SRMIC Project. All rights reserved. Distributed under MIT License.</p>
+      <div class="footer-col-wrapper">
+        <div class="footer-col">
+          <p><strong>SRMIC Project</strong> — Residency-First Inference Acceleration</p>
+          <p>SRAM-centric Residency-first Memory-centric Inference</p>
+        </div>
+        <div class="footer-col">
+          <p><strong>Patent Pending:</strong> Application No. 202641031926 (IPO)</p>
+          <p><strong>Scope:</strong> Analytical Simulation & Latency Modeling</p>
+        </div>
+      </div>
+      <p class="copyright">&copy; 2026 SRMIC Project. Distributed under MIT License.</p>
     </div>
   </footer>
 </body>
