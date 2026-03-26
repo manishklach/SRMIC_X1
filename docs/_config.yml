@@ -1,7 +1,7 @@
 title: SRMIC | Residency-First LLM Inference Architecture
 description: A distributed on-package SRAM-centric architecture for LLM decode acceleration, eliminating the HBM bottleneck.
-baseurl: "/SRMIC_X1"
-url: "https://manishklach.github.io"
+baseurl: ""
+url: "https://manishklach.github.io/SRMIC_X1"
 
 # SEO
 twitter:
